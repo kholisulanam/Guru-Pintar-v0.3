@@ -1,0 +1,16 @@
+{
+  "entities": {
+    "app_data": {
+      "title": "Application Data",
+      "description": "Real-time state synchronization for e-Madrasah Terpadu",
+      "properties": {
+        "payload": {
+          "type": "object"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
