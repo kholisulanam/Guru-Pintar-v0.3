@@ -205,6 +205,44 @@ const STORAGE_KEYS_MAP: Record<string, string> = {
   libraryBooks: 'guru_pintar_library_books',
 };
 
+// Helper to merge cloud and local array items without losing locally created data
+export function mergeArrays<T>(key: string, cloudArr: T[], localArr: T[]): T[] {
+  if (!Array.isArray(cloudArr)) return Array.isArray(localArr) ? localArr : [];
+  if (!Array.isArray(localArr) || localArr.length === 0) return deduplicateItems(key, cloudArr);
+
+  const mergedMap = new Map<string, T>();
+
+  const getItemKey = (item: any): string => {
+    if (!item || typeof item !== 'object') return '';
+    if (item.id) return `id:${String(item.id).trim()}`;
+    if (key === 'users' && item.username) return `user:${String(item.username).trim().toLowerCase()}`;
+    if (key === 'teachers' && (item.nuptk || item.nipNuptk)) return `nuptk:${String(item.nuptk || item.nipNuptk).trim()}`;
+    if (key === 'students' && item.nisn) return `nisn:${String(item.nisn).trim()}`;
+    return '';
+  };
+
+  for (const item of cloudArr) {
+    if (!item || typeof item !== 'object') continue;
+    const k = getItemKey(item);
+    if (k) mergedMap.set(k, item);
+  }
+
+  for (const item of localArr) {
+    if (!item || typeof item !== 'object') continue;
+    const k = getItemKey(item);
+    if (k) {
+      if (!mergedMap.has(k)) {
+        mergedMap.set(k, item);
+      } else {
+        const existing = mergedMap.get(k) as any;
+        mergedMap.set(k, { ...existing, ...(item as any) });
+      }
+    }
+  }
+
+  return deduplicateItems(key, Array.from(mergedMap.values()));
+}
+
 export function subscribeToFirebaseKey<T>(key: string, onData: (data: T) => void) {
   if (isQuotaExceeded) return () => {};
 
@@ -227,17 +265,32 @@ export function subscribeToFirebaseKey<T>(key: string, onData: (data: T) => void
         if (snapshot.exists()) {
           let cloudVal = snapshot.data()?.payload;
           if (cloudVal !== undefined) {
+            let finalVal = cloudVal;
+
             if (Array.isArray(cloudVal)) {
-              cloudVal = deduplicateItems(key, cloudVal);
+              if (localVal && Array.isArray(localVal)) {
+                finalVal = mergeArrays(key, cloudVal, localVal);
+              } else {
+                finalVal = deduplicateItems(key, cloudVal);
+              }
             }
 
-            const cloudSerialized = JSON.stringify(cloudVal);
-            if (lastSyncedPayloadMap.get(key) !== cloudSerialized) {
-              lastSyncedPayloadMap.set(key, cloudSerialized);
+            const finalSerialized = JSON.stringify(finalVal);
+            if (lastSyncedPayloadMap.get(key) !== finalSerialized) {
+              lastSyncedPayloadMap.set(key, finalSerialized);
               try {
-                localStorage.setItem(rawKey, cloudSerialized);
+                localStorage.setItem(rawKey, finalSerialized);
               } catch (e) {}
-              onData(cloudVal as T);
+              onData(finalVal as T);
+
+              // Resync merged result to Firestore if local items were merged into cloud
+              if (Array.isArray(cloudVal) && Array.isArray(finalVal) && finalVal.length > cloudVal.length) {
+                if (!isQuotaExceeded) {
+                  setDoc(docRef, { payload: finalVal, updatedAt: new Date().toISOString() }).catch((err) => {
+                    console.warn(`Resync merged data error for ${key}:`, err);
+                  });
+                }
+              }
             }
           }
         } else {

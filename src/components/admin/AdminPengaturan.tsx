@@ -236,30 +236,31 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
       return;
     }
 
+    let nextUsers: User[] = [];
     if (editingUser) {
       // Update existing
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingUser.id
-            ? {
-                ...u,
-                name: userFormData.name,
-                username: userFormData.username,
-                password: userFormData.password,
-                role: userFormData.role,
-                nuptkOrNisn: userFormData.nuptkOrNisn,
-                kelasId: userFormData.kelasId,
-                status: userFormData.status,
-              }
-            : u
-        )
+      nextUsers = users.map((u) =>
+        u.id === editingUser.id
+          ? {
+              ...u,
+              name: userFormData.name,
+              nama: userFormData.name,
+              username: userFormData.username.trim().toLowerCase(),
+              password: userFormData.password,
+              role: userFormData.role,
+              nuptkOrNisn: userFormData.nuptkOrNisn,
+              kelasId: userFormData.kelasId,
+              status: userFormData.status,
+            }
+          : u
       );
     } else {
       // Add new
       const newUser: User = {
-        id: userFormData.id,
+        id: userFormData.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
         name: userFormData.name,
-        username: userFormData.username,
+        nama: userFormData.name,
+        username: userFormData.username.trim().toLowerCase(),
         password: userFormData.password,
         role: userFormData.role,
         nuptkOrNisn: userFormData.nuptkOrNisn,
@@ -267,8 +268,11 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
         status: userFormData.status,
         avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80`,
       };
-      setUsers((prev) => [...prev, newUser]);
+      nextUsers = [...users.filter((u) => u.username !== newUser.username), newUser];
     }
+
+    setUsers(nextUsers);
+    storageService.saveUsers(nextUsers, true);
 
     setIsModalOpen(false);
     setSavedSuccess(true);
@@ -278,15 +282,17 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
   // Quick Reset Password
   const handleResetPassword = (user: User) => {
     const generated = user.role === 'siswa' ? generateRandomPass(8) : user.role === 'admin' ? 'admin#123' : generateRandomPass(8);
-    setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, password: generated } : u))
-    );
+    const nextUsers = users.map((u) => (u.id === user.id ? { ...u, password: generated } : u));
+    setUsers(nextUsers);
+    storageService.saveUsers(nextUsers, true);
     triggerToast(`Password ${user.name} berhasil di-reset menjadi '${generated}'`);
   };
 
   // Delete User
   const handleDeleteUser = (userId: string, name: string) => {
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    const nextUsers = users.filter((u) => u.id !== userId);
+    setUsers(nextUsers);
+    storageService.saveUsers(nextUsers, true);
   };
 
   // Filter Users

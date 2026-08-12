@@ -10,29 +10,37 @@ export function exportToExcel(
   data: Record<string, any>[],
   filename: string,
   sheetName = 'Data Rekap',
-  settings?: SchoolSettings
+  settings?: SchoolSettings,
+  isTemplate = false
 ) {
   if (!data || data.length === 0) {
     alert('Tidak ada data untuk diekspor ke Excel');
     return;
   }
 
-  const thAkademik = settings?.tahunAkademik || '2025/2026';
-  const smstr = settings?.semester || 'Ganjil';
+  let worksheet: XLSX.WorkSheet;
 
-  // Create Kop Header rows at top of sheet
-  const headerRows = [
-    ['YAYASAN AL-AMIEN PRENDUAN'],
-    ['MADRASAH ALIYAH AL-AMIEN I PRAGAAN'],
-    ['PRENDUAN SUMENEP MADURA INDONESIA'],
-    ['NSM : 131235290001 | STATUS : TERAKREDITASI (A)'],
-    ['Alamat : Jalan Raya Pamekasan-Sumenep No 2A Telp. (0328) 821020 Kode Pos 69465'],
-    [`TAHUN AKADEMIK : ${thAkademik} | SEMESTER : ${smstr.toUpperCase()}`],
-    [],
-  ];
+  if (isTemplate) {
+    // Templates start directly at A1 without Kop header for seamless upload
+    worksheet = XLSX.utils.json_to_sheet(data);
+  } else {
+    const thAkademik = settings?.tahunAkademik || '2025/2026';
+    const smstr = settings?.semester || 'Ganjil';
 
-  const worksheet = XLSX.utils.aoa_to_sheet(headerRows);
-  XLSX.utils.sheet_add_json(worksheet, data, { origin: 'A8' });
+    // Create Kop Header rows at top of sheet
+    const headerRows = [
+      ['YAYASAN AL-AMIEN PRENDUAN'],
+      ['MADRASAH ALIYAH AL-AMIEN I PRAGAAN'],
+      ['PRENDUAN SUMENEP MADURA INDONESIA'],
+      ['NSM : 131235290001 | STATUS : TERAKREDITASI (A)'],
+      ['Alamat : Jalan Raya Pamekasan-Sumenep No 2A Telp. (0328) 821020 Kode Pos 69465'],
+      [`TAHUN AKADEMIK : ${thAkademik} | SEMESTER : ${smstr.toUpperCase()}`],
+      [],
+    ];
+
+    worksheet = XLSX.utils.aoa_to_sheet(headerRows);
+    XLSX.utils.sheet_add_json(worksheet, data, { origin: 'A8' });
+  }
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);

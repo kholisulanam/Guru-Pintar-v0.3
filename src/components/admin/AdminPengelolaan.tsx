@@ -35,6 +35,97 @@ import { exportToExcel } from '../../lib/exportUtils';
 import { storageService } from '../../lib/storage';
 import * as XLSX from 'xlsx';
 
+function extractExcelValue(row: any, candidateKeys: string[]): string {
+  if (!row || typeof row !== 'object') return '';
+  const rowKeys = Object.keys(row);
+
+  // First pass: Exact key match
+  for (const cand of candidateKeys) {
+    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const key of rowKeys) {
+      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (keyClean === candClean) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+
+  // Second pass: Substring match
+  for (const cand of candidateKeys) {
+    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!candClean) continue;
+    for (const key of rowKeys) {
+      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (keyClean.includes(candClean)) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+
+  return '';
+}
+
+function readExcelRows(ws: XLSX.WorkSheet): any[] {
+  // Read raw strings 2D matrix
+  const matrix: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  if (!matrix || matrix.length === 0) return [];
+
+  // Find header row index (scanning rows until we find header keywords)
+  let headerRowIndex = 0;
+  for (let r = 0; r < matrix.length; r++) {
+    const row = matrix[r];
+    if (!Array.isArray(row)) continue;
+
+    const rowStr = row.map((cell) => String(cell || '').toLowerCase()).join(' ');
+    if (
+      rowStr.includes('nama') ||
+      rowStr.includes('guru') ||
+      rowStr.includes('nuptk') ||
+      rowStr.includes('nip') ||
+      rowStr.includes('nisn') ||
+      rowStr.includes('kelas') ||
+      rowStr.includes('mapel') ||
+      rowStr.includes('kode') ||
+      rowStr.includes('judul') ||
+      rowStr.includes('user') ||
+      rowStr.includes('username')
+    ) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+
+  const headers = (matrix[headerRowIndex] || []).map((h) => String(h || '').trim());
+  if (!headers || headers.length === 0) return [];
+
+  const result: any[] = [];
+  for (let r = headerRowIndex + 1; r < matrix.length; r++) {
+    const row = matrix[r];
+    if (!Array.isArray(row)) continue;
+
+    const hasContent = row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== '');
+    if (!hasContent) continue;
+
+    const rowObj: Record<string, string> = {};
+    headers.forEach((hKey, colIdx) => {
+      if (hKey) {
+        const val = row[colIdx];
+        rowObj[hKey] = val !== undefined && val !== null ? String(val).trim() : '';
+      }
+    });
+
+    result.push(rowObj);
+  }
+
+  return result;
+}
+
 interface AdminPengelolaanProps {
   teachers: TeacherItem[];
   setTeachers: React.Dispatch<React.SetStateAction<TeacherItem[]>>;
@@ -249,21 +340,43 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
     if (!deleteTarget) return;
     const { id, type, name } = deleteTarget;
     if (type === 'guru') {
-      setTeachers((prev) => prev.filter((t) => t.id !== id));
-      if (setUsers) setUsers((prev) => prev.filter((u) => u.id !== id));
+      const nextTeachers = teachers.filter((t) => t.id !== id);
+      setTeachers(nextTeachers);
+      storageService.saveTeachers(nextTeachers, true);
+
+      if (setUsers) {
+        const currentUsers = users || storageService.getUsers() || [];
+        const nextUsers = currentUsers.filter((u) => u.id !== id && u.name !== name && u.nama !== name);
+        setUsers(nextUsers);
+        storageService.saveUsers(nextUsers, true);
+      }
       showToast(`Data Guru '${name}' berhasil dihapus.`);
     } else if (type === 'siswa') {
-      setStudents((prev) => prev.filter((s) => s.id !== id));
-      if (setUsers) setUsers((prev) => prev.filter((u) => u.id !== id));
+      const nextStudents = students.filter((s) => s.id !== id);
+      setStudents(nextStudents);
+      storageService.saveStudents(nextStudents, true);
+
+      if (setUsers) {
+        const currentUsers = users || storageService.getUsers() || [];
+        const nextUsers = currentUsers.filter((u) => u.id !== id && u.name !== name && u.nama !== name);
+        setUsers(nextUsers);
+        storageService.saveUsers(nextUsers, true);
+      }
       showToast(`Data Siswa '${name}' berhasil dihapus.`);
     } else if (type === 'kelas') {
-      setClasses((prev) => prev.filter((c) => c.id !== id));
+      const nextClasses = classes.filter((c) => c.id !== id);
+      setClasses(nextClasses);
+      storageService.saveClasses(nextClasses, true);
       showToast(`Kelas '${name}' berhasil dihapus.`);
     } else if (type === 'mapel') {
-      setSubjects((prev) => prev.filter((m) => m.id !== id));
+      const nextSubjects = subjects.filter((m) => m.id !== id);
+      setSubjects(nextSubjects);
+      storageService.saveSubjects(nextSubjects, true);
       showToast(`Mata Pelajaran '${name}' berhasil dihapus.`);
     } else if (type === 'buku') {
-      setLibraryBooks((prev) => prev.filter((b) => b.id !== id));
+      const nextBooks = libraryBooks.filter((b) => b.id !== id);
+      setLibraryBooks(nextBooks);
+      storageService.saveLibraryBooks(nextBooks, true);
       showToast(`Buku '${name}' berhasil dihapus.`);
     }
     setDeleteTarget(null);
@@ -273,15 +386,28 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
   const handleUpdateGuru = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingGuru) return;
-    setTeachers((prev) => prev.map((t) => (t.id === editingGuru.id ? editingGuru : t)));
+    const nextTeachers = teachers.map((t) => (t.id === editingGuru.id ? editingGuru : t));
+    setTeachers(nextTeachers);
+    storageService.saveTeachers(nextTeachers, true);
+
     if (setUsers) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingGuru.id
-            ? { ...u, name: editingGuru.nama, nuptkOrNisn: editingGuru.nuptk, username: String(editingGuru.nuptk || editingGuru.nipNuptk || u.username || '').toLowerCase().trim() }
-            : u
-        )
+      const currentUsers = users || storageService.getUsers() || [];
+      const unameToUse = String(editingGuru.nuptk || editingGuru.nipNuptk || '').toLowerCase().trim();
+      const nextUsers = currentUsers.map((u) =>
+        u.id === editingGuru.id || (u.role === 'guru' && u.nuptkOrNisn === editingGuru.nuptk)
+          ? {
+              ...u,
+              name: editingGuru.nama,
+              nama: editingGuru.nama,
+              nuptkOrNisn: editingGuru.nuptk,
+              nipNuptk: editingGuru.nuptk,
+              username: unameToUse || u.username,
+              mataPelajaranNama: editingGuru.mengajarMapel || editingGuru.mataPelajaranNama,
+            }
+          : u
       );
+      setUsers(nextUsers);
+      storageService.saveUsers(nextUsers, true);
     }
     showToast(`Perubahan data Guru '${editingGuru.nama}' berhasil disimpan!`);
     setEditingGuru(null);
@@ -374,29 +500,40 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
     e.preventDefault();
     if (!newGuru.nama || !newGuru.nuptk) return;
     const added: TeacherItem = {
-      id: `guru-${Date.now()}`,
-      nama: newGuru.nama,
-      nuptk: newGuru.nuptk,
+      id: `guru-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      nama: newGuru.nama.trim(),
+      nuptk: newGuru.nuptk.trim(),
+      nipNuptk: newGuru.nuptk.trim(),
       mengajarMapel: newGuru.mengajarMapel || 'Mapel Umum',
+      mataPelajaranNama: newGuru.mengajarMapel || 'Mapel Umum',
       email: newGuru.email || `${newGuru.nuptk}@al-amien.sch.id`,
       telepon: newGuru.telepon || '08123456789',
       status: 'Aktif',
     };
-    setTeachers((prev) => [...prev, added]);
+
+    const nextTeachers = [...teachers.filter((t) => t.id !== added.id && t.nuptk !== added.nuptk), added];
+    setTeachers(nextTeachers);
+    storageService.saveTeachers(nextTeachers, true);
 
     // Automatically generate User Login account
     if (setUsers) {
+      const currentUsers = users || storageService.getUsers() || [];
       const newUser: User = {
         id: added.id,
         username: added.nuptk.toString().trim().toLowerCase(),
         password: 'guru123',
         name: added.nama,
+        nama: added.nama,
         role: 'guru',
         nuptkOrNisn: added.nuptk,
+        nipNuptk: added.nuptk,
+        mataPelajaranNama: added.mengajarMapel,
         status: 'Aktif',
         avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80',
       };
-      setUsers((prev) => [...prev.filter((u) => u.username !== newUser.username), newUser]);
+      const nextUsers = [...currentUsers.filter((u) => u.username !== newUser.username && u.id !== newUser.id), newUser];
+      setUsers(nextUsers);
+      storageService.saveUsers(nextUsers, true);
     }
 
     setNewGuru({ nama: '', nuptk: '', mengajarMapel: '', email: '', telepon: '' });
@@ -528,7 +665,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       { Nama: 'Drs. Ahmad Fauzi, M.Pd.', NUPTK: '197508152002121003', Mengajar: 'Matematika Wajib, Fisika', User: '197508152002121003', Password: '123' },
       { Nama: 'Ustdzh. Siti Aminah, S.Pd', NUPTK: '198502022008022002', Mengajar: 'Bahasa Arab', User: '198502022008022002', Password: '123' },
     ];
-    exportToExcel(templateData, 'Template_Data_Guru_MAS_Al_Amien', 'Template Guru');
+    exportToExcel(templateData, 'Template_Data_Guru_MAS_Al_Amien', 'Template Guru', settings, true);
   };
 
   const downloadTemplateSiswa = () => {
@@ -536,7 +673,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       { NISN: '0061112233', Nama: 'Ahmad Mubarok', JenisKelamin: 'L', Kelas: 'XII IPA 1', TTL: 'Sumenep, 10 Maret 2006', User: '0061112233', Password: 'murid123' },
       { NISN: '0064445566', Nama: 'Siti Rahmawati', JenisKelamin: 'P', Kelas: 'XII IPA 2', TTL: 'Pamekasan, 15 Juli 2006', User: '0064445566', Password: 'murid123' },
     ];
-    exportToExcel(templateData, 'Template_Data_Siswa_MAS_Al_Amien', 'Template Siswa');
+    exportToExcel(templateData, 'Template_Data_Siswa_MAS_Al_Amien', 'Template Siswa', settings, true);
   };
 
   const downloadTemplateKelas = () => {
@@ -544,7 +681,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       { NamaKelas: 'X IPA 1', Tingkat: 'X', WaliKelas: 'H. Moh. Ridwan, S.Ag', Ruangan: 'Ruang 101' },
       { NamaKelas: 'XI IPS 2', Tingkat: 'XI', WaliKelas: 'Ustdzh. Siti Aminah, S.Pd', Ruangan: 'Ruang 202' },
     ];
-    exportToExcel(templateData, 'Template_Data_Kelas_MAS_Al_Amien', 'Template Kelas');
+    exportToExcel(templateData, 'Template_Data_Kelas_MAS_Al_Amien', 'Template Kelas', settings, true);
   };
 
   const downloadTemplateMapel = () => {
@@ -553,14 +690,14 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       { Kode: 'ARB', NamaMapel: 'Bahasa Arab', Kelompok: 'Wajib' },
       { Kode: 'BIG', NamaMapel: 'Bahasa Inggris', Kelompok: 'Peminatan' },
     ];
-    exportToExcel(templateData, 'Template_Data_Mapel_MAS_Al_Amien', 'Template Mapel');
+    exportToExcel(templateData, 'Template_Data_Mapel_MAS_Al_Amien', 'Template Mapel', settings, true);
   };
 
   const downloadTemplateBuku = () => {
     const templateData = [
       { Judul: 'Kitab Fiqih Al-Wadhih', Pengarang: 'Dr. Mahmud Yunus', Penerbit: 'Pustaka Al-Amien', Kategori: 'Keagamaan', Tahun: 2024, Stok: 30, Ringkasan: 'Panduan fiqih muamalah santri', LinkPDF: 'https://raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/examples/learning/helloworld.pdf' },
     ];
-    exportToExcel(templateData, 'Template_Daftar_Bacaan_Perpustakaan', 'Template Buku');
+    exportToExcel(templateData, 'Template_Daftar_Bacaan_Perpustakaan', 'Template Buku', settings, true);
   };
 
   // Handle Upload Excel/CSV with Firestore persistence
@@ -575,96 +712,179 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
-          showToast('File Excel data Guru kosong!');
+          showToast('File Excel data Guru kosong atau tidak terbaca!');
           return;
         }
 
-        const imported: TeacherItem[] = data.map((item, idx) => {
-          const mapelStr = String(item.Mengajar || item.mengajar || item.Mapel || item.mapel || item.MataPelajaran || item['Mata Pelajaran'] || 'Mapel').trim();
+        const validImportedRows: { teacher: TeacherItem; user: User }[] = [];
+        const allExistingUsernames = new Set([
+          ...(users || []).map((u) => u.username.toLowerCase().trim()),
+        ]);
+
+        const isGenericValue = (str: string) => {
+          const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return !clean || ['123', '0', 'nuptk', 'nip', 'user', 'username', 'null', 'undefined', 'dash', '-'].includes(clean);
+        };
+
+        data.forEach((item, idx) => {
+          if (!item || typeof item !== 'object') return;
+
+          const teacherNama = extractExcelValue(item, [
+            'Nama Guru',
+            'Nama',
+            'Nama Lengkap',
+            'Guru',
+            'Pengajar',
+            'Pendidik',
+            'Name',
+            'NamaGuru',
+            'Pegawai'
+          ]);
+
+          // Skip empty or invalid rows without a real name
+          if (!teacherNama || teacherNama.trim().length < 2) return;
+          const lowerNama = teacherNama.toLowerCase();
+          if (lowerNama.includes('yayasan') || lowerNama.includes('madrasah aliyah') || lowerNama.includes('tahun akademik')) return;
+
+          let teacherNuptkRaw = extractExcelValue(item, [
+            'NUPTK',
+            'NIP',
+            'NIP/NUPTK',
+            'NUPTK/NIP',
+            'ID Guru',
+            'Username',
+            'User'
+          ]);
+
+          teacherNuptkRaw = teacherNuptkRaw.replace(/\.0$/, '').trim();
+
+          const uniqueFallbackNuptk = `${Date.now().toString().slice(-6)}${idx}${Math.floor(Math.random() * 900 + 100)}`;
+          const teacherNuptk = !isGenericValue(teacherNuptkRaw) ? teacherNuptkRaw : uniqueFallbackNuptk;
+
+          const mapelStr = extractExcelValue(item, [
+            'Mengajar',
+            'Mapel',
+            'Mata Pelajaran',
+            'MataPelajaran',
+            'Pelajaran',
+            'Subject',
+            'Bidang'
+          ]) || 'Mapel Umum';
+
           const names = mapelStr
-            .split(',')
+            .split(/[,;&/]/)
             .map((s: string) => (s ? String(s).trim().toLowerCase() : ''))
             .filter(Boolean);
 
           const matchedIds = (subjects || [])
             .filter((s) => {
               if (!s) return false;
-              const sName = s.namaMataPelajaran ? String(s.namaMataPelajaran).toLowerCase() : '';
+              const sName = (s.namaMapel || s.namaMataPelajaran || '').toLowerCase();
               if (!sName) return false;
               return names.some((n: string) => n && (sName.includes(n) || n.includes(sName)));
             })
             .map((s) => s.id);
 
-          const teacherNama = String(item.Nama || item.nama || item['Nama Guru'] || item.NamaGuru || 'Guru Baru').trim();
-          const teacherNuptk = String(item.NUPTK || item.nuptk || item.NIP || item.nip || `199${idx}000000`).trim();
+          const emailVal = extractExcelValue(item, ['Email', 'E-mail', 'Surel']) || `${teacherNuptk}@al-amien.sch.id`;
+          const phoneVal = extractExcelValue(item, ['Telepon', 'No HP', 'NoHP', 'HP', 'WA', 'Telp']) || '08123456789';
 
-          return {
-            id: `guru-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+          let customUser = extractExcelValue(item, ['User', 'Username', 'Akun']).toLowerCase().trim();
+          customUser = customUser.replace(/\.0$/, '');
+          const customPass = extractExcelValue(item, ['Password', 'Pass', 'Sandi', 'PIN']) || 'guru123';
+
+          let baseUname = !isGenericValue(customUser)
+            ? customUser
+            : (!isGenericValue(teacherNuptk) ? teacherNuptk.toLowerCase() : `guru_${idx + 1}`);
+
+          let unameToUse = baseUname;
+          let counter = 1;
+          while (allExistingUsernames.has(unameToUse)) {
+            counter++;
+            unameToUse = `${baseUname}_${counter}`;
+          }
+          allExistingUsernames.add(unameToUse);
+
+          const teacherId = `guru-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`;
+
+          const teacherObj: TeacherItem = {
+            id: teacherId,
             nama: teacherNama,
             nipNuptk: teacherNuptk,
             nuptk: teacherNuptk,
             mataPelajaranIds: matchedIds,
             mataPelajaranNama: mapelStr,
             mengajarMapel: mapelStr,
-            email: String(item.Email || item.email || `${teacherNuptk || idx}@al-amien.sch.id`).trim(),
-            telepon: String(item.Telepon || item.telepon || item.NoHP || item.nohp || '08123456789').trim(),
+            email: emailVal,
+            telepon: phoneVal,
             status: 'Aktif',
           };
-        });
 
-        // Upsert Teachers
-        let updatedTeachers = [...teachers];
-        imported.forEach((t) => {
-          updatedTeachers = updatedTeachers.filter(
-            (existing) =>
-              existing.id !== t.id &&
-              (existing.nuptk || existing.nipNuptk) !== (t.nuptk || t.nipNuptk) &&
-              existing.nama.toLowerCase() !== t.nama.toLowerCase()
-          );
-          updatedTeachers.push(t);
-        });
-        setTeachers(updatedTeachers);
-        storageService.saveTeachers(updatedTeachers, true);
-
-        // Upsert User Accounts for Teachers
-        const currentUsers = users || storageService.getUsers() || [];
-        let updatedUsersList = [...currentUsers];
-
-        imported.forEach((t, idx) => {
-          const row = data[idx] || {};
-          const rawUser = row.User || row.user || row.Username || row.username || t.nuptk || t.nipNuptk || t.id || '';
-          const customUser = String(rawUser).trim().toLowerCase();
-          const rawPass = row.Password || row.password || row.Pass || row.pass || 'guru123';
-          const customPass = String(rawPass).trim();
-
-          const unameToUse = customUser || (t.nuptk ? String(t.nuptk).trim().toLowerCase() : `guru${Date.now()}-${idx}`);
-          const passToUse = customPass || 'guru123';
-
-          const newUserObj: User = {
-            id: t.id,
+          const userObj: User = {
+            id: teacherId,
             username: unameToUse,
-            password: passToUse,
-            nama: t.nama,
-            name: t.nama,
+            password: customPass,
+            nama: teacherNama,
+            name: teacherNama,
             role: 'guru',
-            nipNuptk: t.nuptk || t.nipNuptk,
-            nuptkOrNisn: t.nuptk || t.nipNuptk,
-            mataPelajaranId: t.mataPelajaranIds && t.mataPelajaranIds.length > 0 ? t.mataPelajaranIds[0] : undefined,
-            mataPelajaranNama: t.mataPelajaranNama || t.mengajarMapel,
+            nipNuptk: teacherNuptk,
+            nuptkOrNisn: teacherNuptk,
+            mataPelajaranId: matchedIds.length > 0 ? matchedIds[0] : undefined,
+            mataPelajaranNama: mapelStr,
             status: 'Aktif',
             avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&auto=format&fit=crop&q=80',
           };
 
-          updatedUsersList = updatedUsersList.filter(
-            (u) =>
-              u.id !== t.id &&
-              u.username.toLowerCase() !== unameToUse.toLowerCase() &&
-              (u.role !== 'guru' || (u.nama.toLowerCase() !== t.nama.toLowerCase() && u.nuptkOrNisn !== (t.nuptk || t.nipNuptk)))
-          );
-          updatedUsersList.push(newUserObj);
+          validImportedRows.push({ teacher: teacherObj, user: userObj });
+        });
+
+        if (validImportedRows.length === 0) {
+          showToast('Tidak ada data Guru valid yang ditemukan dalam file Excel.');
+          return;
+        }
+
+        // Upsert Teachers
+        let updatedTeachers = [...teachers];
+        validImportedRows.forEach(({ teacher: t }) => {
+          const cleanName = t.nama.toLowerCase().trim();
+          const cleanNuptk = (t.nuptk || t.nipNuptk || '').trim();
+          const isRealNuptk = cleanNuptk.length >= 6 && !isGenericValue(cleanNuptk);
+
+          updatedTeachers = updatedTeachers.filter((existing) => {
+            if (existing.id === t.id) return false;
+            if (existing.nama.toLowerCase().trim() === cleanName) return false;
+            const existNuptk = (existing.nuptk || existing.nipNuptk || '').trim();
+            if (isRealNuptk && existNuptk === cleanNuptk) return false;
+            return true;
+          });
+
+          updatedTeachers.push(t);
+        });
+
+        setTeachers(updatedTeachers);
+        storageService.saveTeachers(updatedTeachers, true);
+
+        // Upsert Users
+        const currentUsers = users || storageService.getUsers() || [];
+        let updatedUsersList = [...currentUsers];
+
+        validImportedRows.forEach(({ user: uObj, teacher: t }) => {
+          const cleanName = t.nama.toLowerCase().trim();
+          const cleanNuptk = (t.nuptk || t.nipNuptk || '').trim();
+
+          updatedUsersList = updatedUsersList.filter((u) => {
+            if (u.id === uObj.id) return false;
+            if (u.username.toLowerCase() === uObj.username.toLowerCase()) return false;
+            if (u.role === 'guru') {
+              if (u.nama.toLowerCase().trim() === cleanName) return false;
+              if (cleanNuptk.length >= 6 && u.nuptkOrNisn === cleanNuptk) return false;
+            }
+            return true;
+          });
+
+          updatedUsersList.push(uObj);
         });
 
         if (setUsers) {
@@ -672,7 +892,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         }
         storageService.saveUsers(updatedUsersList, true);
 
-        showToast(`Berhasil mengimpor & menyimpan ${imported.length} data Guru ke Database Cloud Firestore!`);
+        showToast(`Berhasil mengimpor & menyimpan ${validImportedRows.length} data Guru ke Database Cloud Firestore!`);
       } catch (err) {
         console.error('Error importing teachers Excel:', err);
         showToast('Gagal membaca file Excel Guru.');
@@ -694,33 +914,59 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
-          showToast('File Excel data Siswa kosong!');
+          showToast('File Excel data Siswa kosong atau tidak terbaca!');
           return;
         }
 
-        const imported: StudentItem[] = data.map((item, idx) => {
-          const rawClassStr = (item.Kelas || item.kelas || item.NamaKelas || '').toString().trim();
+        const imported: StudentItem[] = [];
+        const allUsernames = new Set([
+          ...(users || []).map((u) => u.username.toLowerCase().trim()),
+        ]);
+
+        data.forEach((item, idx) => {
+          if (!item || typeof item !== 'object') return;
+
+          const studentNama = extractExcelValue(item, ['Nama', 'Nama Siswa', 'Nama Lengkap', 'Siswa', 'Santri', 'Name']);
+          if (!studentNama || studentNama.trim().length < 2) return;
+
+          const lowerNama = studentNama.toLowerCase();
+          if (lowerNama.includes('yayasan') || lowerNama.includes('madrasah aliyah')) return;
+
+          let studentNisn = extractExcelValue(item, ['NISN', 'NIS', 'ID Siswa', 'No Induk', 'NIM']);
+          studentNisn = studentNisn.replace(/\.0$/, '').trim();
+          if (!studentNisn || studentNisn === '0' || studentNisn === '-') {
+            studentNisn = `006${Date.now().toString().slice(-5)}${idx}`;
+          }
+
+          const rawClassStr = extractExcelValue(item, ['Kelas', 'Nama Kelas', 'Rombel', 'Tingkat']);
           const matchedClass = matchClass(rawClassStr, classes);
           const classIdToUse = matchedClass ? matchedClass.id : (classes[0]?.id || 'cls-12a');
 
-          const rawJk = String(
-            item.JenisKelamin || item['Jenis Kelamin'] || item.jenisKelamin || item['Jenis-Kelamin'] || item.JK || item.jk || item['L/P'] || item.LP || ''
-          ).trim().toUpperCase();
+          const rawJk = extractExcelValue(item, ['Jenis Kelamin', 'JenisKelamin', 'JK', 'L/P', 'LP']).toUpperCase();
           const parsedJk: 'L' | 'P' = rawJk.startsWith('P') || rawJk === 'PEREMPUAN' || rawJk === 'FEMALE' ? 'P' : 'L';
 
-          return {
+          const ttlStr = extractExcelValue(item, ['TTL', 'Tempat Tanggal Lahir', 'Tempat Lahir', 'Tanggal Lahir']) || 'Sumenep, 2006';
+
+          const sObj: StudentItem = {
             id: `sis-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-            nama: item.Nama || item.nama || 'Siswa Baru',
-            nisn: String(item.NISN || item.nisn || `006${idx}123`).trim(),
-            ttl: item.TTL || item.ttl || 'Sumenep, 2006',
+            nama: studentNama,
+            nisn: studentNisn,
+            ttl: ttlStr,
             kelasId: classIdToUse,
             jenisKelamin: parsedJk,
             status: 'Aktif',
           };
+
+          imported.push(sObj);
         });
+
+        if (imported.length === 0) {
+          showToast('Tidak ada data Siswa valid yang ditemukan dalam file Excel.');
+          return;
+        }
 
         // Upsert Students
         let updatedStudents = [...students];
@@ -729,7 +975,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             (existing) =>
               existing.id !== s.id &&
               existing.nisn !== s.nisn &&
-              existing.nama.toLowerCase() !== s.nama.toLowerCase()
+              existing.nama.toLowerCase().trim() !== s.nama.toLowerCase().trim()
           );
           updatedStudents.push(s);
         });
@@ -742,21 +988,28 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
 
         imported.forEach((s, idx) => {
           const row = data[idx] || {};
-          const rawUser = row.User || row.user || row.Username || row.username || s.nisn || s.id || '';
-          const customUser = String(rawUser).trim().toLowerCase();
-          const rowPass = String(row.Password || row.password || row.Pass || row.pass || '').trim();
+          const customUser = extractExcelValue(row, ['User', 'Username', 'Akun']).toLowerCase().trim().replace(/\.0$/, '');
+          const customPass = extractExcelValue(row, ['Password', 'Pass', 'Sandi', 'PIN']).trim();
+
+          let baseUname = customUser || s.nisn.toLowerCase();
+          let unameToUse = baseUname;
+          let counter = 1;
+          while (allUsernames.has(unameToUse)) {
+            counter++;
+            unameToUse = `${baseUname}_${counter}`;
+          }
+          allUsernames.add(unameToUse);
+
           const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
           let randomPass = '';
           for (let i = 0; i < 8; i++) {
             randomPass += chars.charAt(Math.floor(Math.random() * chars.length));
           }
-          const passToUse = rowPass || randomPass;
-          const unameToUse = customUser || s.nisn.toLowerCase();
 
           const newUserObj: User = {
             id: s.id,
             username: unameToUse,
-            password: passToUse,
+            password: customPass || randomPass,
             nama: s.nama,
             name: s.nama,
             role: 'siswa',
@@ -770,7 +1023,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             (u) =>
               u.id !== s.id &&
               u.username.toLowerCase() !== unameToUse.toLowerCase() &&
-              (u.role !== 'siswa' || (u.nama.toLowerCase() !== s.nama.toLowerCase() && u.nuptkOrNisn !== s.nisn))
+              (u.role !== 'siswa' || (u.nama.toLowerCase().trim() !== s.nama.toLowerCase().trim() && u.nuptkOrNisn !== s.nisn))
           );
           updatedUsersList.push(newUserObj);
         });
@@ -802,7 +1055,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
           showToast('File Excel data Buku kosong!');
@@ -811,15 +1064,15 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
 
         const imported: LibraryBook[] = data.map((item, idx) => ({
           id: `bk-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-          judul: item.Judul || item.judul || 'Judul Buku',
-          pengarang: item.Pengarang || item.pengarang || 'Penulis',
-          penerbit: item.Penerbit || item.penerbit || 'Penerbit',
-          kategori: item.Kategori || item.kategori || 'Keagamaan',
-          tahunTerbit: Number(item.Tahun || item.tahunTerbit) || 2024,
-          stok: Number(item.Stok || item.stok) || 15,
+          judul: extractExcelValue(item, ['Judul', 'Judul Buku', 'Nama Buku', 'Title']) || 'Judul Buku',
+          pengarang: extractExcelValue(item, ['Pengarang', 'Penulis', 'Author']) || 'Penulis',
+          penerbit: extractExcelValue(item, ['Penerbit', 'Publisher']) || 'Penerbit',
+          kategori: extractExcelValue(item, ['Kategori', 'Category']) || 'Keagamaan',
+          tahunTerbit: Number(extractExcelValue(item, ['Tahun', 'Tahun Terbit', 'Year'])) || 2024,
+          stok: Number(extractExcelValue(item, ['Stok', 'Jumlah', 'Stock'])) || 15,
           coverColor: 'from-blue-600 to-indigo-800',
-          ringkasan: item.Ringkasan || item.ringkasan || 'Deskripsi singkat modul bacaan.',
-          filePdfDemoUrl: item.LinkPDF || item.linkPDF || item.filePdfDemoUrl || item.url || item.pdfUrl || '',
+          ringkasan: extractExcelValue(item, ['Ringkasan', 'Deskripsi', 'Summary']) || 'Deskripsi singkat modul bacaan.',
+          filePdfDemoUrl: extractExcelValue(item, ['LinkPDF', 'PDF', 'Link', 'URL']) || '',
         }));
 
         const updatedBooks = [...libraryBooks, ...imported];
@@ -848,7 +1101,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
           showToast('File Excel data Kelas kosong!');
@@ -857,9 +1110,9 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
 
         const imported: ClassItem[] = data.map((item, idx) => ({
           id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-          namaKelas: item.NamaKelas || item.namaKelas || item.nama || item.Nama || `Kelas ${idx + 1}`,
-          waliKelas: item.WaliKelas || item.waliKelas || 'Belum Ditentukan',
-          jumlahSiswa: Number(item.JumlahSiswa || item.jumlahSiswa) || 0,
+          namaKelas: extractExcelValue(item, ['NamaKelas', 'Nama Kelas', 'Kelas', 'Nama']) || `Kelas ${idx + 1}`,
+          waliKelas: extractExcelValue(item, ['WaliKelas', 'Wali Kelas', 'Wali']) || 'Belum Ditentukan',
+          jumlahSiswa: Number(extractExcelValue(item, ['JumlahSiswa', 'Jumlah Siswa', 'Jumlah'])) || 0,
         }));
 
         const updatedClasses = [...classes, ...imported];
@@ -888,7 +1141,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
           showToast('File Excel data Mata Pelajaran kosong!');
@@ -897,9 +1150,9 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
 
         const imported: SubjectItem[] = data.map((item, idx) => ({
           id: `mpl-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-          kode: item.Kode || item.kode || `MPL${idx + 1}`,
-          namaMapel: item.NamaMapel || item.namaMapel || item.nama || item.Nama || 'Mata Pelajaran',
-          kelompok: (item.Kelompok || item.kelompok || 'Wajib') as 'Wajib' | 'Peminatan' | 'Muatan Lokal',
+          kode: extractExcelValue(item, ['Kode', 'Kode Mapel', 'ID']) || `MPL${idx + 1}`,
+          namaMapel: extractExcelValue(item, ['NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'Nama']) || 'Mata Pelajaran',
+          kelompok: (extractExcelValue(item, ['Kelompok', 'Kategori']) || 'Wajib') as 'Wajib' | 'Peminatan' | 'Muatan Lokal',
         }));
 
         const updatedSubjects = [...subjects, ...imported];
