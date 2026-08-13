@@ -3,7 +3,7 @@ import { GradeRecord, StudentItem, ClassItem, SubjectItem, SchoolSettings, User,
 import { storageService } from '../../lib/storage';
 import { Award, Save, FileSpreadsheet, Printer } from 'lucide-react';
 import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
-import { getTeacherSubjects } from '../../lib/matchUtils';
+import { getTeacherSubjects, isClassMatch, matchClass } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 
@@ -41,8 +41,15 @@ export const GuruPenilaian: React.FC<GuruPenilaianProps> = ({
     }
   }, [availableSubjects]);
 
-  const classStudents = students.filter((s) => s.kelasId === selectedKelas);
-  const currentClassObj = classes.find((c) => c.id === selectedKelas);
+  useEffect(() => {
+    if (classes.length > 0 && !classes.some((c) => c.id === selectedKelas)) {
+      const matched = matchClass(selectedKelas, classes);
+      setSelectedKelas(matched ? matched.id : classes[0].id);
+    }
+  }, [classes]);
+
+  const classStudents = students.filter((s) => isClassMatch(s.kelasId, selectedKelas, classes));
+  const currentClassObj = classes.find((c) => c.id === selectedKelas) || matchClass(selectedKelas, classes) || classes[0];
   const currentMapelObj = subjects.find((m) => m.id === selectedMapel);
 
   // Local state for grade form inputs

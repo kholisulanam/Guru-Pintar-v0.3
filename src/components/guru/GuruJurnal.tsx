@@ -3,7 +3,7 @@ import { TeachingJournal, SchoolSettings, User, ClassItem, SubjectItem, TeacherI
 import { storageService, getTodayString } from '../../lib/storage';
 import { BookOpen, Plus, Trash2, FileSpreadsheet, Printer } from 'lucide-react';
 import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
-import { isTeacherMatch, getTeacherSubjects } from '../../lib/matchUtils';
+import { isTeacherMatch, getTeacherSubjects, isClassMatch, matchClass } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 
@@ -49,8 +49,21 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
     }
   }, [availableSubjects]);
 
+  useEffect(() => {
+    if (classes.length > 0) {
+      if (!classes.some((c) => c.id === kelasId)) {
+        const matched = matchClass(kelasId, classes);
+        setKelasId(matched ? matched.id : classes[0].id);
+      }
+      if (!classes.some((c) => c.id === filterKelas)) {
+        const matched = matchClass(filterKelas, classes);
+        setFilterKelas(matched ? matched.id : classes[0].id);
+      }
+    }
+  }, [classes]);
+
   const myJournals = teachingJournals.filter((j) => isTeacherMatch(j.guruId, currentUser));
-  const filteredJournals = myJournals.filter((j) => j.kelasId === filterKelas);
+  const filteredJournals = myJournals.filter((j) => isClassMatch(j.kelasId, filterKelas, classes));
 
   const handleAddJournal = (e: React.FormEvent) => {
     e.preventDefault();

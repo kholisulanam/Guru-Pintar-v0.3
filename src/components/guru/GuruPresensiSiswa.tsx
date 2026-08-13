@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StudentAttendance, StudentItem, ClassItem, SchoolSettings, User } from '../../types';
 import { storageService, getTodayString } from '../../lib/storage';
 import { Users, CheckCircle2, FileSpreadsheet, Printer, Save, CheckCheck } from 'lucide-react';
 import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
+import { isClassMatch, matchClass } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 
@@ -32,8 +33,15 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
   // Local state for batch student attendance entry
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, 'Hadir' | 'Izin' | 'Sakit' | 'Alpa'>>({});
 
-  const classStudents = students.filter((s) => s.kelasId === selectedKelas);
-  const currentClassObj = classes.find((c) => c.id === selectedKelas);
+  useEffect(() => {
+    if (classes.length > 0 && !classes.some((c) => c.id === selectedKelas)) {
+      const matched = matchClass(selectedKelas, classes);
+      setSelectedKelas(matched ? matched.id : classes[0].id);
+    }
+  }, [classes]);
+
+  const classStudents = students.filter((s) => isClassMatch(s.kelasId, selectedKelas, classes));
+  const currentClassObj = classes.find((c) => c.id === selectedKelas) || matchClass(selectedKelas, classes) || classes[0];
 
   const handleSetAllHadir = () => {
     const draft: Record<string, 'Hadir' | 'Izin' | 'Sakit' | 'Alpa'> = {};

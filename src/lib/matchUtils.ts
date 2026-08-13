@@ -221,19 +221,23 @@ export function matchClass(rawKelas: string, classes: ClassItem[]): ClassItem | 
   const cleanMatch = classes.find((c) => cleanStr(c.namaKelas) === rawClean);
   if (cleanMatch) return cleanMatch;
 
-  // 3. Normalized Match (e.g., "X IPA 1" vs "Kelas 10 IPA 1" or "10-A" vs "X-A")
+  // 3. Normalized Match (e.g., "X IPA 1" vs "Kelas 10 IPA 1" or "10-A" vs "X-A" or "cls-12a" vs "XII-A")
   const normClassStr = (s: string) =>
-    s
+    (s || '')
       .toLowerCase()
-      .replace(/^(kelas|kls|rombel)\s+/i, '')
+      .replace(/^(kelas|kls|rombel|cls-?)\s*/i, '')
       .replace(/\bxii\b/g, '12')
       .replace(/\bxi\b/g, '11')
       .replace(/\bx\b/g, '10')
       .replace(/[^a-z0-9]/g, '');
 
   const rawNorm = normClassStr(raw);
-  const normMatch = classes.find((c) => normClassStr(c.namaKelas) === rawNorm);
-  if (normMatch) return normMatch;
+  if (rawNorm) {
+    const normMatch = classes.find(
+      (c) => normClassStr(c.namaKelas) === rawNorm || normClassStr(c.id) === rawNorm
+    );
+    if (normMatch) return normMatch;
+  }
 
   return null;
 }

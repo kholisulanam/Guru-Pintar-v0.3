@@ -69,7 +69,17 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// Helper to deduplicate array items strictly by item.id
+const normClassKey = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/^(kelas|kls|rombel)\s+/i, '')
+    .replace(/\bxii\b/g, '12')
+    .replace(/\bxi\b/g, '11')
+    .replace(/\bx\b/g, '10')
+    .replace(/[^a-z0-9]/g, '');
+
+// Helper to deduplicate array items strictly by entity key or item.id
 export function deduplicateItems<T>(key: string, items: T[]): T[] {
   if (!Array.isArray(items)) return items;
   const seen = new Set<string>();
@@ -81,15 +91,30 @@ export function deduplicateItems<T>(key: string, items: T[]): T[] {
       continue;
     }
     const obj = item as any;
-    if (!obj.id) {
+    let itemKey = obj.id ? `id:${String(obj.id).trim()}` : '';
+
+    if (key === 'classes' && obj.namaKelas) {
+      const norm = normClassKey(obj.namaKelas);
+      if (norm) itemKey = `class:${norm}`;
+    } else if (key === 'users' && obj.username) {
+      itemKey = `user:${String(obj.username).trim().toLowerCase()}`;
+    } else if (key === 'teachers' && (obj.nuptk || obj.nipNuptk)) {
+      itemKey = `nuptk:${String(obj.nuptk || obj.nipNuptk).trim()}`;
+    } else if (key === 'students' && obj.nisn) {
+      const cleanNisn = String(obj.nisn).trim();
+      if (cleanNisn.length >= 4 && !['123', '0', 'nisn', 'nis'].includes(cleanNisn)) {
+        itemKey = `nisn:${cleanNisn}`;
+      }
+    }
+
+    if (!itemKey) {
       result.push(item);
       continue;
     }
-    const idStr = String(obj.id).trim();
-    if (seen.has(idStr)) {
-      continue; // Skip duplicate record with identical ID
+    if (seen.has(itemKey)) {
+      continue; // Skip duplicate record with identical entity key
     }
-    seen.add(idStr);
+    seen.add(itemKey);
     result.push(item);
   }
   return result;
@@ -214,10 +239,19 @@ export function mergeArrays<T>(key: string, cloudArr: T[], localArr: T[]): T[] {
 
   const getItemKey = (item: any): string => {
     if (!item || typeof item !== 'object') return '';
-    if (item.id) return `id:${String(item.id).trim()}`;
+    if (key === 'classes' && item.namaKelas) {
+      const norm = normClassKey(item.namaKelas);
+      if (norm) return `class:${norm}`;
+    }
     if (key === 'users' && item.username) return `user:${String(item.username).trim().toLowerCase()}`;
     if (key === 'teachers' && (item.nuptk || item.nipNuptk)) return `nuptk:${String(item.nuptk || item.nipNuptk).trim()}`;
-    if (key === 'students' && item.nisn) return `nisn:${String(item.nisn).trim()}`;
+    if (key === 'students' && item.nisn) {
+      const cleanNisn = String(item.nisn).trim();
+      if (cleanNisn.length >= 4 && !['123', '0', 'nisn', 'nis'].includes(cleanNisn)) {
+        return `nisn:${cleanNisn}`;
+      }
+    }
+    if (item.id) return `id:${String(item.id).trim()}`;
     return '';
   };
 

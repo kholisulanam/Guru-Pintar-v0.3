@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StudentAttendance,
   TeacherAttendance,
@@ -23,6 +23,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
+import { matchClass, isClassMatch } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 import { getTodayString } from '../../lib/storage';
@@ -71,7 +72,14 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
     { value: '2026-08', label: 'Agustus 2026' },
   ];
 
-  const currentClassObj = classes.find((c) => c.id === selectedKelas);
+  useEffect(() => {
+    if (classes.length > 0 && !classes.some((c) => c.id === selectedKelas)) {
+      const matched = matchClass(selectedKelas, classes);
+      setSelectedKelas(matched ? matched.id : classes[0].id);
+    }
+  }, [classes]);
+
+  const currentClassObj = classes.find((c) => c.id === selectedKelas) || matchClass(selectedKelas, classes) || classes[0];
   const currentMapelObj = subjects.find((m) => m.id === selectedMapel);
   const currentGuruObj = teachers.find((t) => t.id === selectedGuru);
 
@@ -80,7 +88,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
   // 1. Rekap Presensi Murid
   const getPresensiSiswaData = () => {
     return studentAttendances.filter((sa) => {
-      const matchKelas = sa.kelasId === selectedKelas;
+      const matchKelas = isClassMatch(sa.kelasId, selectedKelas, classes);
       if (modePeriode === 'harian') {
         return matchKelas && sa.tanggal === selectedTanggal;
       }
@@ -102,7 +110,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
   // 3. Rekap Jurnal Mengajar
   const getJurnalData = () => {
     return teachingJournals.filter((tj) => {
-      const matchKelas = tj.kelasId === selectedKelas;
+      const matchKelas = isClassMatch(tj.kelasId, selectedKelas, classes);
       if (modePeriode === 'harian') {
         return matchKelas && tj.tanggal === selectedTanggal;
       }
@@ -113,7 +121,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
   // 4. Rekap Nilai
   const getNilaiData = () => {
     return gradeRecords.filter((gr) => {
-      const matchKelas = gr.kelasId === selectedKelas;
+      const matchKelas = isClassMatch(gr.kelasId, selectedKelas, classes);
       const matchMapel = gr.mapelId === selectedMapel;
       return matchKelas && matchMapel;
     });

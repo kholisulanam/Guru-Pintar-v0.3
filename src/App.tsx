@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   SchoolSettings,
@@ -23,7 +23,6 @@ import {
   defaultUsers,
   defaultTeachers,
   defaultStudents,
-  defaultClasses,
   defaultSubjects,
   defaultSchedules,
   defaultAnnouncements,
@@ -150,10 +149,10 @@ export default function App() {
   );
 
   const [classes, setClasses] = useState<ClassItem[]>(() => {
-    const stored = storageService.get<ClassItem[]>('classes', defaultClasses);
+    const stored = storageService.get<ClassItem[]>('classes', []);
     const initTeachers = storageService.get<TeacherItem[]>('teachers', defaultTeachers);
     const cleaned = sanitizeAndDeduplicateClasses(stored, initTeachers);
-    return cleaned.length > 0 ? cleaned : defaultClasses;
+    return cleaned;
   });
 
   const [students, setStudents] = useState<StudentItem[]>(() => {
@@ -239,6 +238,11 @@ export default function App() {
     return () => unsubConnection();
   }, []);
 
+  const teachersRef = useRef(teachers);
+  useEffect(() => {
+    teachersRef.current = teachers;
+  }, [teachers]);
+
   // Real-time Cloud Firestore Subscriptions
   useEffect(() => {
     const unsubs = [
@@ -247,7 +251,8 @@ export default function App() {
       storageService.subscribeRealtime<StudentItem[]>('students', (d) => d && setStudents(d)),
       storageService.subscribeRealtime<ClassItem[]>('classes', (d) => {
         if (d && Array.isArray(d)) {
-          const cleaned = sanitizeAndDeduplicateClasses(d, teachers);
+          const availTeachers = teachersRef.current.length > 0 ? teachersRef.current : defaultTeachers;
+          const cleaned = sanitizeAndDeduplicateClasses(d, availTeachers);
           setClasses(cleaned);
         }
       }),
