@@ -21,15 +21,9 @@ import {
 import {
   defaultSettings,
   defaultUsers,
-  defaultTeachers,
-  defaultStudents,
-  defaultSubjects,
-  defaultSchedules,
   defaultAnnouncements,
-  defaultAssessments,
   defaultStudentAttendances,
   defaultTeacherAttendances,
-  defaultTeachingJournals,
   defaultGradeRecords,
   defaultLibraryBooks,
   defaultCalendarEvents
@@ -37,7 +31,13 @@ import {
 
 import { storageService, getTodayString } from './lib/storage';
 import { onFirebaseConnectionChange } from './lib/firebase';
-import { sanitizeAndDeduplicateClasses } from './lib/matchUtils';
+import {
+  sanitizeAndDeduplicateTeachers,
+  sanitizeAndDeduplicateClasses,
+  sanitizeAndDeduplicateStudents,
+  sanitizeAndDeduplicateSubjects,
+  sanitizeAndDeduplicateSchedules
+} from './lib/matchUtils';
 
 import { Header } from './components/common/Header';
 import { Sidebar, TabItem } from './components/navigation/Sidebar';
@@ -144,33 +144,37 @@ export default function App() {
     storageService.get('settings', defaultSettings)
   );
 
-  const [teachers, setTeachers] = useState<TeacherItem[]>(() =>
-    storageService.get('teachers', defaultTeachers)
-  );
+  const [teachers, setTeachers] = useState<TeacherItem[]>(() => {
+    const stored = storageService.get<TeacherItem[]>('teachers', []);
+    return sanitizeAndDeduplicateTeachers(stored || []);
+  });
 
   const [classes, setClasses] = useState<ClassItem[]>(() => {
     const stored = storageService.get<ClassItem[]>('classes', []);
-    const initTeachers = storageService.get<TeacherItem[]>('teachers', defaultTeachers);
-    const cleaned = sanitizeAndDeduplicateClasses(stored, initTeachers);
+    const initTeachers = sanitizeAndDeduplicateTeachers(storageService.get<TeacherItem[]>('teachers', []));
+    const cleaned = sanitizeAndDeduplicateClasses(stored || [], initTeachers);
     return cleaned;
   });
 
   const [students, setStudents] = useState<StudentItem[]>(() => {
-    const stored = storageService.get<StudentItem[]>('students', defaultStudents);
-    const remapped = stored.map((s) => ({
+    const stored = storageService.get<StudentItem[]>('students', []);
+    const cleaned = sanitizeAndDeduplicateStudents(stored || []);
+    const remapped = cleaned.map((s) => ({
       ...s,
       kelasId: remapLegacyClassId(s.kelasId),
     }));
     return remapped;
   });
 
-  const [subjects, setSubjects] = useState<SubjectItem[]>(() =>
-    storageService.get('subjects', defaultSubjects)
-  );
+  const [subjects, setSubjects] = useState<SubjectItem[]>(() => {
+    const stored = storageService.get<SubjectItem[]>('subjects', []);
+    return sanitizeAndDeduplicateSubjects(stored || []);
+  });
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>(() => {
-    const stored = storageService.get<ScheduleItem[]>('schedules', defaultSchedules);
-    return stored.map((sch) => ({
+    const stored = storageService.get<ScheduleItem[]>('schedules', []);
+    const cleaned = sanitizeAndDeduplicateSchedules(stored || []);
+    return cleaned.map((sch) => ({
       ...sch,
       kelasId: remapLegacyClassId(sch.kelasId),
     }));
@@ -181,11 +185,13 @@ export default function App() {
   );
 
   const [assessments, setAssessments] = useState<Assessment[]>(() => {
-    const stored = storageService.get<Assessment[]>('assessments', defaultAssessments);
-    return stored.map((a) => ({
-      ...a,
-      kelasId: remapLegacyClassId(a.kelasId),
-    }));
+    const stored = storageService.get<Assessment[]>('assessments', []);
+    return (stored || [])
+      .filter((a) => a && a.id !== 'asm-1' && a.id !== 'asm-2')
+      .map((a) => ({
+        ...a,
+        kelasId: remapLegacyClassId(a.kelasId),
+      }));
   });
 
   const [submissions, setSubmissions] = useState<AssessmentSubmission[]>(() =>
@@ -201,11 +207,13 @@ export default function App() {
   );
 
   const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>(() => {
-    const stored = storageService.get<TeachingJournal[]>('teachingJournals', defaultTeachingJournals);
-    return stored.map((tj) => ({
-      ...tj,
-      kelasId: remapLegacyClassId(tj.kelasId),
-    }));
+    const stored = storageService.get<TeachingJournal[]>('teachingJournals', []);
+    return (stored || [])
+      .filter((tj) => tj && tj.id !== 'tj-1' && tj.id !== 'tj-2')
+      .map((tj) => ({
+        ...tj,
+        kelasId: remapLegacyClassId(tj.kelasId),
+      }));
   });
 
   const [gradeRecords, setGradeRecords] = useState<GradeRecord[]>(() => {
@@ -247,23 +255,51 @@ export default function App() {
   useEffect(() => {
     const unsubs = [
       storageService.subscribeRealtime<SchoolSettings>('settings', (d) => d && setSettings(d)),
-      storageService.subscribeRealtime<TeacherItem[]>('teachers', (d) => d && setTeachers(d)),
-      storageService.subscribeRealtime<StudentItem[]>('students', (d) => d && setStudents(d)),
+      storageService.subscribeRealtime<TeacherItem[]>('teachers', (d) => {
+        if (d && Array.isArray(d)) {
+          const cleaned = sanitizeAndDeduplicateTeachers(d);
+          setTeachers(cleaned);
+        }
+      }),
+      storageService.subscribeRealtime<StudentItem[]>('students', (d) => {
+        if (d && Array.isArray(d)) {
+          const cleaned = sanitizeAndDeduplicateStudents(d);
+          setStudents(cleaned);
+        }
+      }),
       storageService.subscribeRealtime<ClassItem[]>('classes', (d) => {
         if (d && Array.isArray(d)) {
-          const availTeachers = teachersRef.current.length > 0 ? teachersRef.current : defaultTeachers;
+          const availTeachers = teachersRef.current;
           const cleaned = sanitizeAndDeduplicateClasses(d, availTeachers);
           setClasses(cleaned);
         }
       }),
-      storageService.subscribeRealtime<SubjectItem[]>('subjects', (d) => d && setSubjects(d)),
-      storageService.subscribeRealtime<ScheduleItem[]>('schedules', (d) => d && setSchedules(d)),
+      storageService.subscribeRealtime<SubjectItem[]>('subjects', (d) => {
+        if (d && Array.isArray(d)) {
+          const cleaned = sanitizeAndDeduplicateSubjects(d);
+          setSubjects(cleaned);
+        }
+      }),
+      storageService.subscribeRealtime<ScheduleItem[]>('schedules', (d) => {
+        if (d && Array.isArray(d)) {
+          const cleaned = sanitizeAndDeduplicateSchedules(d);
+          setSchedules(cleaned);
+        }
+      }),
       storageService.subscribeRealtime<Announcement[]>('announcements', (d) => d && setAnnouncements(d)),
-      storageService.subscribeRealtime<Assessment[]>('assessments', (d) => d && setAssessments(d)),
+      storageService.subscribeRealtime<Assessment[]>('assessments', (d) => {
+        if (d && Array.isArray(d)) {
+          setAssessments(d.filter((a) => a && a.id !== 'asm-1' && a.id !== 'asm-2'));
+        }
+      }),
       storageService.subscribeRealtime<AssessmentSubmission[]>('submissions', (d) => d && setSubmissions(d)),
       storageService.subscribeRealtime<StudentAttendance[]>('studentAttendances', (d) => d && setStudentAttendances(d)),
       storageService.subscribeRealtime<TeacherAttendance[]>('teacherAttendances', (d) => d && setTeacherAttendances(d)),
-      storageService.subscribeRealtime<TeachingJournal[]>('teachingJournals', (d) => d && setTeachingJournals(d)),
+      storageService.subscribeRealtime<TeachingJournal[]>('teachingJournals', (d) => {
+        if (d && Array.isArray(d)) {
+          setTeachingJournals(d.filter((tj) => tj && tj.id !== 'tj-1' && tj.id !== 'tj-2'));
+        }
+      }),
       storageService.subscribeRealtime<GradeRecord[]>('gradeRecords', (d) => d && setGradeRecords(d)),
       storageService.subscribeRealtime<LibraryBook[]>('libraryBooks', (d) => d && setLibraryBooks(d)),
       storageService.subscribeRealtime<User[]>('users', (d) => d && setUsers(d)),

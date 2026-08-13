@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Assessment, ClassItem, SubjectItem, TeacherItem, Question, User, StudentItem, ScheduleItem } from '../../types';
 import { storageService } from '../../lib/storage';
 import { canUserAccessAssessment } from '../../lib/assessmentUtils';
-import { defaultStudents, defaultClasses } from '../../lib/initialData';
 import { isClassMatch } from '../../lib/matchUtils';
 import { FileCheck, Plus, Trash2, Power, Clock, HelpCircle, Sparkles, Bot, Wand2, Loader2, Check, Pencil, Eye, Save, X, RotateCcw, Users, UserCheck, ShieldCheck, Copy, Files } from 'lucide-react';
 
@@ -42,8 +41,8 @@ export const AdminAsesmen: React.FC<AdminAsesmenProps> = ({
   const [selectedSiswaIds, setSelectedSiswaIds] = useState<string[]>([]);
   const [studentFilterKelas, setStudentFilterKelas] = useState<string>('semua');
 
-  const activeClasses = (classes && classes.length > 0) ? classes : defaultClasses;
-  const activeStudents = (students && students.length > 0) ? students : defaultStudents;
+  const activeClasses = classes || [];
+  const activeStudents = students || [];
 
   const getClassName = (clsId: string) => {
     if (!clsId || clsId === 'semua' || clsId === 'all') return 'Semua Kelas';

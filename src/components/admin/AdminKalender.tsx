@@ -30,7 +30,6 @@ import {
 } from 'lucide-react';
 import { CalendarEvent, CalendarEventType, ScheduleItem, TeacherItem, ClassItem, SubjectItem } from '../../types';
 import { getTodayString } from '../../lib/storage';
-import { defaultTeachers, defaultClasses, defaultSubjects } from '../../lib/initialData';
 import { matchTeacher, matchSubject, matchClass } from '../../lib/matchUtils';
 import {
   broadcastReminderToAll,
@@ -161,13 +160,13 @@ export const AdminKalender: React.FC<AdminKalenderProps> = ({
     const seenSyncKeys = new Set<string>();
 
     schedulesToSync.forEach((sch) => {
-      const guruObj = matchTeacher(sch.guruId, teachers) || matchTeacher(sch.guruId, defaultTeachers);
+      const guruObj = matchTeacher(sch.guruId, teachers);
       const guru = guruObj?.nama || sch.guruId || 'Guru Pengajar';
 
-      const kelasObj = matchClass(sch.kelasId, classes) || matchClass(sch.kelasId, defaultClasses);
+      const kelasObj = matchClass(sch.kelasId, classes);
       const kelas = kelasObj?.namaKelas || sch.kelasId || 'Kelas';
 
-      const mapelObj = matchSubject(sch.mapelId, subjects) || matchSubject(sch.mapelId, defaultSubjects);
+      const mapelObj = matchSubject(sch.mapelId, subjects);
       const mapel = mapelObj?.namaMapel || sch.mapelId || 'Mata Pelajaran';
 
       const jamText = sch.jamKe || '08:00 - 09:30';

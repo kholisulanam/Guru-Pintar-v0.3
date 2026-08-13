@@ -1,6 +1,12 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
+import {
+  isLegacyDummyStudent,
+  isLegacyDummyTeacher,
+  isLegacyDummySubject,
+  isLegacyDummySchedule,
+} from './matchUtils';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
@@ -79,7 +85,7 @@ const normClassKey = (s: string) =>
     .replace(/\bx\b/g, '10')
     .replace(/[^a-z0-9]/g, '');
 
-// Helper to deduplicate array items strictly by entity key or item.id
+// Helper to deduplicate array items strictly by entity key or item.id and filter dummy legacy seeds
 export function deduplicateItems<T>(key: string, items: T[]): T[] {
   if (!Array.isArray(items)) return items;
   const seen = new Set<string>();
@@ -91,6 +97,15 @@ export function deduplicateItems<T>(key: string, items: T[]): T[] {
       continue;
     }
     const obj = item as any;
+
+    // Filter dummy seeds
+    if (key === 'students' && isLegacyDummyStudent(obj)) continue;
+    if (key === 'teachers' && isLegacyDummyTeacher(obj)) continue;
+    if (key === 'subjects' && isLegacyDummySubject(obj)) continue;
+    if (key === 'schedules' && isLegacyDummySchedule(obj)) continue;
+    if (key === 'assessments' && (obj.id === 'asm-1' || obj.id === 'asm-2')) continue;
+    if (key === 'teachingJournals' && (obj.id === 'tj-1' || obj.id === 'tj-2')) continue;
+
     let itemKey = obj.id ? `id:${String(obj.id).trim()}` : '';
 
     if (key === 'classes' && obj.namaKelas) {

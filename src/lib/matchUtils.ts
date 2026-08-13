@@ -1,4 +1,4 @@
-import { TeacherItem, SubjectItem, ClassItem, ScheduleItem } from '../types';
+import { TeacherItem, SubjectItem, ClassItem, ScheduleItem, StudentItem } from '../types';
 
 /**
  * Clean string for alphanumeric comparisons
@@ -322,13 +322,13 @@ export function sanitizeAndDeduplicateClasses(
       }
     }
 
-    // If still no valid wali kelas matched, assign from available teachers or keep first teacher as default
+    // If still no valid wali kelas matched, assign from available teachers or '-'
     if (!validWaliName) {
       if (teachers.length > 0) {
         const fallbackTeacher = teachers[cleanedList.length % teachers.length];
-        validWaliName = fallbackTeacher ? fallbackTeacher.nama : 'SYAIFUDIN KUDSI, SHI. MA.';
+        validWaliName = fallbackTeacher ? fallbackTeacher.nama : '-';
       } else {
-        validWaliName = 'SYAIFUDIN KUDSI, SHI. MA.';
+        validWaliName = '-';
       }
     }
 
@@ -547,4 +547,231 @@ export function getTeacherSubjects(
   // Fallback: If no subjects matched, return all subjects
   return subjects;
 }
+
+const LEGACY_DUMMY_STUDENT_NISNS = new Set([
+  '0051234567',
+  '0059876543',
+  '0058881234',
+  '0057774321',
+  '0061122334',
+  '0061122335',
+  '0071122336',
+  '0071122337',
+  '0051122338',
+  '0051122339',
+  '0081122340',
+  '0081122341',
+  '0081122342',
+  '0081122343',
+  '0071122344',
+  '0071122345',
+  '0061122346',
+  '0061122347',
+  '0061122348',
+]);
+
+const LEGACY_DUMMY_STUDENT_NAMES = new Set([
+  'ahmad farisi subakti',
+  'siti fatimah az-zahra',
+  'mohammad alif pratama',
+  'nabila nur aini',
+  'badrus sholeh',
+  'fiki abdillah',
+  'muhammad rizky ramadhan',
+  'zulfah amalia',
+  'khairul anam',
+  'nurul hidayah',
+  'abdullah al-mahdi',
+  'aisyah putri rahmawati',
+  'bagus sajiwo',
+  'dina maulida',
+  'faizal amir',
+  'gita permata',
+  'hasan basri',
+  'intan nuraini',
+  'jalaluddin rumi',
+]);
+
+export function isLegacyDummyStudent(student: any): boolean {
+  if (!student) return false;
+  if (student.nisn && LEGACY_DUMMY_STUDENT_NISNS.has(String(student.nisn).trim())) {
+    return true;
+  }
+  if (student.nama) {
+    const cleanName = String(student.nama).toLowerCase().trim();
+    if (LEGACY_DUMMY_STUDENT_NAMES.has(cleanName)) {
+      return true;
+    }
+  }
+  const idStr = String(student.id || '');
+  if (idStr === 'usr-siswa1' || idStr === 'usr-siswa2') {
+    return true;
+  }
+  return false;
+}
+
+export function sanitizeAndDeduplicateStudents(students: StudentItem[]): StudentItem[] {
+  if (!Array.isArray(students)) return [];
+  const seenNisns = new Set<string>();
+  const seenIds = new Set<string>();
+  const cleaned: StudentItem[] = [];
+
+  for (const student of students) {
+    if (!student || isLegacyDummyStudent(student)) continue;
+    
+    const nisn = student.nisn ? String(student.nisn).trim() : '';
+    const id = student.id ? String(student.id).trim() : '';
+
+    if (nisn && seenNisns.has(nisn)) continue;
+    if (id && seenIds.has(id)) continue;
+
+    if (nisn) seenNisns.add(nisn);
+    if (id) seenIds.add(id);
+
+    cleaned.push(student);
+  }
+
+  return cleaned;
+}
+
+const LEGACY_DUMMY_TEACHER_IDS = new Set([
+  'usr-guru1',
+  'usr-guru2',
+  'guru-3',
+  'guru-4',
+]);
+
+const LEGACY_DUMMY_TEACHER_NUPTKS = new Set([
+  '197805122005011002',
+  '198203152009021005',
+  '198507202011012003',
+  '199011052018031001',
+]);
+
+export function isLegacyDummyTeacher(teacher: any): boolean {
+  if (!teacher) return false;
+  const id = String(teacher.id || '').trim();
+  const nuptk = String(teacher.nuptk || teacher.nipNuptk || '').trim();
+  if (LEGACY_DUMMY_TEACHER_IDS.has(id)) return true;
+  if (LEGACY_DUMMY_TEACHER_NUPTKS.has(nuptk)) return true;
+  return false;
+}
+
+export function sanitizeAndDeduplicateTeachers(teachers: TeacherItem[]): TeacherItem[] {
+  if (!Array.isArray(teachers)) return [];
+  const seenNuptks = new Set<string>();
+  const seenNames = new Set<string>();
+  const seenIds = new Set<string>();
+  const cleaned: TeacherItem[] = [];
+
+  for (const t of teachers) {
+    if (!t || isLegacyDummyTeacher(t)) continue;
+    const nuptk = (t.nuptk || '').trim();
+    const nama = (t.nama || '').trim().toLowerCase();
+    const id = (t.id || '').trim();
+
+    if (nuptk && seenNuptks.has(nuptk)) continue;
+    if (nama && seenNames.has(nama)) continue;
+    if (id && seenIds.has(id)) continue;
+
+    if (nuptk) seenNuptks.add(nuptk);
+    if (nama) seenNames.add(nama);
+    if (id) seenIds.add(id);
+
+    cleaned.push(t);
+  }
+
+  return cleaned;
+}
+
+const LEGACY_DUMMY_SUBJECT_IDS = new Set([
+  'sub-1',
+  'sub-2',
+  'sub-3',
+  'sub-4',
+  'sub-5',
+  'sub-6',
+]);
+
+const LEGACY_DUMMY_SUBJECT_CODES = new Set([
+  'MA-01',
+  'MA-02',
+  'MA-03',
+  'MA-04',
+  'MA-05',
+  'MA-06',
+]);
+
+export function isLegacyDummySubject(subject: any): boolean {
+  if (!subject) return false;
+  const id = String(subject.id || '').trim();
+  const kode = String(subject.kode || '').trim().toUpperCase();
+  if (LEGACY_DUMMY_SUBJECT_IDS.has(id) && LEGACY_DUMMY_SUBJECT_CODES.has(kode)) {
+    return true;
+  }
+  return false;
+}
+
+export function sanitizeAndDeduplicateSubjects(subjects: SubjectItem[]): SubjectItem[] {
+  if (!Array.isArray(subjects)) return [];
+  const seenCodes = new Set<string>();
+  const seenNames = new Set<string>();
+  const seenIds = new Set<string>();
+  const cleaned: SubjectItem[] = [];
+
+  for (const s of subjects) {
+    if (!s || isLegacyDummySubject(s)) continue;
+    const kode = (s.kode || '').trim().toUpperCase();
+    const nama = (s.namaMapel || '').trim().toLowerCase();
+    const id = (s.id || '').trim();
+
+    if (kode && seenCodes.has(kode)) continue;
+    if (nama && seenNames.has(nama)) continue;
+    if (id && seenIds.has(id)) continue;
+
+    if (kode) seenCodes.add(kode);
+    if (nama) seenNames.add(nama);
+    if (id) seenIds.add(id);
+
+    cleaned.push(s);
+  }
+
+  return cleaned;
+}
+
+export function isLegacyDummySchedule(schedule: any): boolean {
+  if (!schedule) return false;
+  const id = String(schedule.id || '').trim();
+  const guruId = String(schedule.guruId || '').trim();
+  const mapelId = String(schedule.mapelId || '').trim();
+  
+  if (/^sch-([1-9]|1[0-9]|2[0-6])$/.test(id)) {
+    return true;
+  }
+  if (LEGACY_DUMMY_TEACHER_IDS.has(guruId)) {
+    return true;
+  }
+  if (LEGACY_DUMMY_SUBJECT_IDS.has(mapelId)) {
+    return true;
+  }
+  return false;
+}
+
+export function sanitizeAndDeduplicateSchedules(schedules: ScheduleItem[]): ScheduleItem[] {
+  if (!Array.isArray(schedules)) return [];
+  const seenKeys = new Set<string>();
+  const cleaned: ScheduleItem[] = [];
+
+  for (const sch of schedules) {
+    if (!sch || isLegacyDummySchedule(sch)) continue;
+    const key = `${(sch.hari || '').trim().toLowerCase()}_${(sch.jamKe || '').trim().toLowerCase()}_${(sch.kelasId || '').trim().toLowerCase()}_${(sch.guruId || '').trim().toLowerCase()}_${(sch.mapelId || '').trim().toLowerCase()}`;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    cleaned.push(sch);
+  }
+
+  return cleaned;
+}
+
+
 
