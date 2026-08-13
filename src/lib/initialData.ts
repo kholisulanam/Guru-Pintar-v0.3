@@ -100,14 +100,14 @@ export const defaultTeachers: TeacherItem[] = [
 ];
 
 export const defaultClasses: ClassItem[] = [
-  { id: 'cls-10a', namaKelas: 'X-A', waliKelas: 'H. ABD. AZIZ, M.Pd.', jumlahSiswa: 30 },
-  { id: 'cls-10b', namaKelas: 'X-B', waliKelas: 'UST. AHMAD ROFIQI, S.Pd.', jumlahSiswa: 28 },
-  { id: 'cls-10c', namaKelas: 'X-C', waliKelas: 'HJ. SITI MARYAM, M.Pd.', jumlahSiswa: 31 },
-  { id: 'cls-11a', namaKelas: 'XI-A', waliKelas: 'IR. M. TAUFIQ, M.T.', jumlahSiswa: 29 },
-  { id: 'cls-11b', namaKelas: 'XI-B', waliKelas: 'DRA. HALIMAH', jumlahSiswa: 30 },
-  { id: 'cls-12a', namaKelas: 'XII-A', waliKelas: 'DR. K.H. MUNIR, M.Ag.', jumlahSiswa: 32 },
-  { id: 'cls-12b', namaKelas: 'XII-B', waliKelas: 'DRS. M. SYARIF, M.M.', jumlahSiswa: 30 },
-  { id: 'cls-12c', namaKelas: 'XII-C', waliKelas: 'USTADZAH LATIFAH, M.Pd.', jumlahSiswa: 28 },
+  { id: 'cls-10a', namaKelas: 'X-A', waliKelas: 'SYAIFUDIN KUDSI, SHI. MA.', jumlahSiswa: 30 },
+  { id: 'cls-10b', namaKelas: 'X-B', waliKelas: 'Nur Aida, S.Pd.I.', jumlahSiswa: 28 },
+  { id: 'cls-10c', namaKelas: 'X-C', waliKelas: 'NURUL HIDAYATI, M.Pd.', jumlahSiswa: 31 },
+  { id: 'cls-11a', namaKelas: 'XI-A', waliKelas: 'MOHAMMAD RIFQI, S.Si.', jumlahSiswa: 29 },
+  { id: 'cls-11b', namaKelas: 'XI-B', waliKelas: 'Fathurrozi Ariyanto, M.Si.', jumlahSiswa: 30 },
+  { id: 'cls-12a', namaKelas: 'XII-A', waliKelas: 'SYAIFUDIN KUDSI, SHI. MA.', jumlahSiswa: 32 },
+  { id: 'cls-12b', namaKelas: 'XII-B', waliKelas: 'Nur Aida, S.Pd.I.', jumlahSiswa: 30 },
+  { id: 'cls-12c', namaKelas: 'XII-C', waliKelas: 'NURUL HIDAYATI, M.Pd.', jumlahSiswa: 28 },
 ];
 
 export const defaultStudents: StudentItem[] = [

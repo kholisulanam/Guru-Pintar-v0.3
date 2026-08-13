@@ -221,13 +221,121 @@ export function matchClass(rawKelas: string, classes: ClassItem[]): ClassItem | 
   const cleanMatch = classes.find((c) => cleanStr(c.namaKelas) === rawClean);
   if (cleanMatch) return cleanMatch;
 
-  // 3. Normalized Match (e.g., "X IPA 1" vs "Kelas X IPA 1")
-  const stripPrefix = (s: string) => s.toLowerCase().replace(/^(kelas|kls)\s+/i, '').replace(/[^a-z0-9]/g, '');
-  const rawStripped = stripPrefix(raw);
-  const normMatch = classes.find((c) => stripPrefix(c.namaKelas) === rawStripped);
+  // 3. Normalized Match (e.g., "X IPA 1" vs "Kelas 10 IPA 1" or "10-A" vs "X-A")
+  const normClassStr = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/^(kelas|kls|rombel)\s+/i, '')
+      .replace(/\bxii\b/g, '12')
+      .replace(/\bxi\b/g, '11')
+      .replace(/\bx\b/g, '10')
+      .replace(/[^a-z0-9]/g, '');
+
+  const rawNorm = normClassStr(raw);
+  const normMatch = classes.find((c) => normClassStr(c.namaKelas) === rawNorm);
   if (normMatch) return normMatch;
 
   return null;
+}
+
+const INVALID_CLASS_NAMES = new Set([
+  'kelas', 'kls', 'rombel', 'nama kelas', 'nama_kelas', 'header', 'total', 'jumlah',
+  'siswa', 'murid', 'santri', '-', '0', 'null', 'undefined', 'dash', 'none', 'belum ditentukan'
+]);
+
+const LEGACY_CLASS_IDS = new Set(['cls-10ipa1', 'cls-11ipa1', 'cls-12ipa1', 'cls-12ips1']);
+const LEGACY_CLASS_NAMES = new Set([
+  'x ipa 1', 'xi ipa 1', 'xii ipa 1', 'xii ips 1', 'x ips 1',
+  'kelas x ipa 1', 'kelas xi ipa 1', 'kelas xii ipa 1', 'kelas xii ips 1', 'kelas x ips 1'
+]);
+
+/**
+ * Sanitize and deduplicate class lists, ensuring valid class names and valid wali kelas from teachers list.
+ */
+export function sanitizeAndDeduplicateClasses(
+  classList: ClassItem[],
+  teachers: TeacherItem[] = []
+): ClassItem[] {
+  if (!Array.isArray(classList) || classList.length === 0) return [];
+
+  const validTeachersMap = new Map<string, string>();
+  teachers.forEach((t) => {
+    if (t.nama) {
+      validTeachersMap.set(t.nama.trim().toLowerCase(), t.nama.trim());
+      validTeachersMap.set(cleanStr(t.nama), t.nama.trim());
+    }
+  });
+
+  const normClassStr = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/^(kelas|kls|rombel)\s+/i, '')
+      .replace(/\bxii\b/g, '12')
+      .replace(/\bxi\b/g, '11')
+      .replace(/\bx\b/g, '10')
+      .replace(/[^a-z0-9]/g, '');
+
+  const seenNorm = new Set<string>();
+  const cleanedList: ClassItem[] = [];
+
+  for (const c of classList) {
+    if (!c || !c.namaKelas) continue;
+    const rawName = c.namaKelas.trim();
+    const lowerName = rawName.toLowerCase();
+    const cleanName = cleanStr(rawName);
+
+    // Skip legacy, junk, or header names
+    if (
+      LEGACY_CLASS_IDS.has(c.id) ||
+      LEGACY_CLASS_NAMES.has(lowerName) ||
+      INVALID_CLASS_NAMES.has(lowerName) ||
+      INVALID_CLASS_NAMES.has(cleanName) ||
+      rawName.length < 1
+    ) {
+      continue;
+    }
+
+    const normKey = normClassStr(rawName);
+    if (!normKey || seenNorm.has(normKey)) {
+      continue; // Skip duplicate normalized class
+    }
+    seenNorm.add(normKey);
+
+    // Validate or fix Wali Kelas
+    let currentWali = (c.waliKelas || '').trim();
+    let validWaliName = '';
+
+    if (currentWali && currentWali !== '-' && currentWali.toLowerCase() !== 'belum ditentukan') {
+      if (validTeachersMap.has(currentWali.toLowerCase())) {
+        validWaliName = validTeachersMap.get(currentWali.toLowerCase())!;
+      } else if (validTeachersMap.has(cleanStr(currentWali))) {
+        validWaliName = validTeachersMap.get(cleanStr(currentWali))!;
+      } else {
+        const matched = matchTeacher(currentWali, teachers);
+        if (matched) {
+          validWaliName = matched.nama;
+        }
+      }
+    }
+
+    // If still no valid wali kelas matched, assign from available teachers or keep first teacher as default
+    if (!validWaliName) {
+      if (teachers.length > 0) {
+        const fallbackTeacher = teachers[cleanedList.length % teachers.length];
+        validWaliName = fallbackTeacher ? fallbackTeacher.nama : 'SYAIFUDIN KUDSI, SHI. MA.';
+      } else {
+        validWaliName = 'SYAIFUDIN KUDSI, SHI. MA.';
+      }
+    }
+
+    cleanedList.push({
+      ...c,
+      namaKelas: rawName,
+      waliKelas: validWaliName,
+    });
+  }
+
+  return cleanedList;
 }
 
 /**

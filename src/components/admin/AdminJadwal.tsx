@@ -146,11 +146,12 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
 
           const rawKelas = String(item.Kelas || item.kelas || '').trim();
           let matchedClass = matchClass(rawKelas, curClasses);
-          if (!matchedClass && rawKelas) {
+          if (!matchedClass && rawKelas && rawKelas.length >= 1) {
+            const fallbackWali = curTeachers[curClasses.length % (curTeachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.';
             matchedClass = {
               id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
               namaKelas: rawKelas,
-              waliKelas: '-',
+              waliKelas: fallbackWali,
               jumlahSiswa: 0,
             };
             curClasses.push(matchedClass);
@@ -159,19 +160,6 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
 
           const rawGuru = String(item.Guru || item.guru || '').trim();
           let matchedGuru = matchTeacher(rawGuru, curTeachers);
-          if (!matchedGuru && rawGuru) {
-            matchedGuru = {
-              id: `guru-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-              nama: rawGuru,
-              nuptk: `${Math.floor(1000000000000000 + Math.random() * 9000000000000000)}`,
-              mengajarMapel: String(item.Mapel || item.mapel || 'Mata Pelajaran').trim(),
-              email: `${cleanStr(rawGuru)}@al-amien.sch.id`,
-              telepon: '-',
-              status: 'Aktif',
-            };
-            curTeachers.push(matchedGuru);
-            teachersAdded = true;
-          }
 
           const rawMapel = String(item.Mapel || item.mapel || '').trim();
           let matchedMapel = matchSubject(rawMapel, curSubjects);
@@ -191,7 +179,7 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             hari: validHari,
             jamKe: rawJam,
             kelasId: matchedClass?.id || rawKelas || curClasses[0]?.id || 'cls-12a',
-            guruId: matchedGuru?.id || rawGuru || curTeachers[0]?.id || 'usr-guru1',
+            guruId: matchedGuru?.id || curTeachers[0]?.id || 'usr-guru1',
             mapelId: matchedMapel?.id || rawMapel || curSubjects[0]?.id || 'sub-1',
           };
         });

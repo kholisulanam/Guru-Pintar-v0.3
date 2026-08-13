@@ -38,6 +38,7 @@ import {
 
 import { storageService, getTodayString } from './lib/storage';
 import { onFirebaseConnectionChange } from './lib/firebase';
+import { sanitizeAndDeduplicateClasses } from './lib/matchUtils';
 
 import { Header } from './components/common/Header';
 import { Sidebar, TabItem } from './components/navigation/Sidebar';
@@ -150,10 +151,9 @@ export default function App() {
 
   const [classes, setClasses] = useState<ClassItem[]>(() => {
     const stored = storageService.get<ClassItem[]>('classes', defaultClasses);
-    const filtered = stored.filter(
-      (c) => !LEGACY_CLASS_IDS.has(c.id) && !LEGACY_CLASS_NAMES.has(c.namaKelas.toLowerCase().trim())
-    );
-    return filtered.length > 0 ? filtered : defaultClasses;
+    const initTeachers = storageService.get<TeacherItem[]>('teachers', defaultTeachers);
+    const cleaned = sanitizeAndDeduplicateClasses(stored, initTeachers);
+    return cleaned.length > 0 ? cleaned : defaultClasses;
   });
 
   const [students, setStudents] = useState<StudentItem[]>(() => {
@@ -245,7 +245,12 @@ export default function App() {
       storageService.subscribeRealtime<SchoolSettings>('settings', (d) => d && setSettings(d)),
       storageService.subscribeRealtime<TeacherItem[]>('teachers', (d) => d && setTeachers(d)),
       storageService.subscribeRealtime<StudentItem[]>('students', (d) => d && setStudents(d)),
-      storageService.subscribeRealtime<ClassItem[]>('classes', (d) => d && setClasses(d)),
+      storageService.subscribeRealtime<ClassItem[]>('classes', (d) => {
+        if (d && Array.isArray(d)) {
+          const cleaned = sanitizeAndDeduplicateClasses(d, teachers);
+          setClasses(cleaned);
+        }
+      }),
       storageService.subscribeRealtime<SubjectItem[]>('subjects', (d) => d && setSubjects(d)),
       storageService.subscribeRealtime<ScheduleItem[]>('schedules', (d) => d && setSchedules(d)),
       storageService.subscribeRealtime<Announcement[]>('announcements', (d) => d && setAnnouncements(d)),

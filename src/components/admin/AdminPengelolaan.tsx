@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { matchClass } from '../../lib/matchUtils';
+import { matchClass, matchTeacher } from '../../lib/matchUtils';
 import {
   TeacherItem,
   StudentItem,
@@ -86,10 +86,16 @@ function readExcelRows(ws: XLSX.WorkSheet): any[] {
     if (
       rowStr.includes('nama') ||
       rowStr.includes('guru') ||
+      rowStr.includes('siswa') ||
+      rowStr.includes('santri') ||
+      rowStr.includes('murid') ||
+      rowStr.includes('peserta') ||
       rowStr.includes('nuptk') ||
       rowStr.includes('nip') ||
       rowStr.includes('nisn') ||
+      rowStr.includes('nis') ||
       rowStr.includes('kelas') ||
+      rowStr.includes('rombel') ||
       rowStr.includes('mapel') ||
       rowStr.includes('kode') ||
       rowStr.includes('judul') ||
@@ -678,8 +684,8 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
 
   const downloadTemplateKelas = () => {
     const templateData = [
-      { NamaKelas: 'X IPA 1', Tingkat: 'X', WaliKelas: 'H. Moh. Ridwan, S.Ag', Ruangan: 'Ruang 101' },
-      { NamaKelas: 'XI IPS 2', Tingkat: 'XI', WaliKelas: 'Ustdzh. Siti Aminah, S.Pd', Ruangan: 'Ruang 202' },
+      { NamaKelas: 'X IPA 1', Tingkat: 'X', WaliKelas: teachers[0]?.nama || 'Belum Ditentukan', Ruangan: 'Ruang 101' },
+      { NamaKelas: 'XI IPS 2', Tingkat: 'XI', WaliKelas: teachers[1]?.nama || 'Belum Ditentukan', Ruangan: 'Ruang 202' },
     ];
     exportToExcel(templateData, 'Template_Data_Kelas_MAS_Al_Amien', 'Template Kelas', settings, true);
   };
@@ -917,38 +923,123 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
-          showToast('File Excel data Siswa kosong atau tidak terbaca!');
+          showToast('File Excel data Siswa/Murid kosong atau tidak terbaca!');
           return;
         }
 
-        const imported: StudentItem[] = [];
+        const validImportedRows: { student: StudentItem; row: any }[] = [];
         const allUsernames = new Set([
           ...(users || []).map((u) => u.username.toLowerCase().trim()),
         ]);
 
+        const isGenericValue = (str: string) => {
+          const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return !clean || ['123', '0', 'nisn', 'nis', 'user', 'username', 'null', 'undefined', 'dash', '-', 'none', '1', '2', '3'].includes(clean);
+        };
+
+        let currentClasses = [...classes];
+        let classesUpdated = false;
+        const usedNisnsInBatch = new Set<string>();
+
         data.forEach((item, idx) => {
           if (!item || typeof item !== 'object') return;
 
-          const studentNama = extractExcelValue(item, ['Nama', 'Nama Siswa', 'Nama Lengkap', 'Siswa', 'Santri', 'Name']);
+          const studentNama = extractExcelValue(item, [
+            'Nama Siswa',
+            'Nama Lengkap',
+            'Nama Peserta Didik',
+            'Nama Santri',
+            'Nama Murid',
+            'Nama',
+            'Siswa',
+            'Santri',
+            'Murid',
+            'Peserta Didik',
+            'Name',
+            'NamaSiswa',
+            'NamaLengkap'
+          ]);
+
           if (!studentNama || studentNama.trim().length < 2) return;
 
-          const lowerNama = studentNama.toLowerCase();
-          if (lowerNama.includes('yayasan') || lowerNama.includes('madrasah aliyah')) return;
+          const lowerNama = studentNama.toLowerCase().trim();
+          if (
+            lowerNama.includes('yayasan') ||
+            lowerNama.includes('madrasah') ||
+            lowerNama.includes('sekolah') ||
+            lowerNama.includes('daftar siswa') ||
+            lowerNama.includes('rekap data') ||
+            lowerNama.includes('tahun akademik') ||
+            lowerNama.includes('tahun pelajaran') ||
+            lowerNama === 'nama' ||
+            lowerNama === 'nama siswa' ||
+            lowerNama === 'nama lengkap' ||
+            lowerNama === 'jumlah' ||
+            lowerNama === 'total'
+          ) return;
 
-          let studentNisn = extractExcelValue(item, ['NISN', 'NIS', 'ID Siswa', 'No Induk', 'NIM']);
+          let studentNisn = extractExcelValue(item, [
+            'NISN',
+            'NIS',
+            'NISN/NIS',
+            'NIS/NISN',
+            'ID Siswa',
+            'No Induk',
+            'Nomor Induk',
+            'No. Induk',
+            'No_Induk',
+            'No Induk Siswa',
+            'NIM',
+            'ID'
+          ]);
+
           studentNisn = studentNisn.replace(/\.0$/, '').trim();
-          if (!studentNisn || studentNisn === '0' || studentNisn === '-') {
-            studentNisn = `006${Date.now().toString().slice(-5)}${idx}`;
+
+          if (!studentNisn || isGenericValue(studentNisn) || studentNisn.length < 4 || usedNisnsInBatch.has(studentNisn)) {
+            studentNisn = `006${Date.now().toString().slice(-5)}${String(idx).padStart(2, '0')}${Math.floor(Math.random() * 89 + 10)}`;
+          } else {
+            usedNisnsInBatch.add(studentNisn);
           }
 
-          const rawClassStr = extractExcelValue(item, ['Kelas', 'Nama Kelas', 'Rombel', 'Tingkat']);
-          const matchedClass = matchClass(rawClassStr, classes);
-          const classIdToUse = matchedClass ? matchedClass.id : (classes[0]?.id || 'cls-12a');
+          const rawClassStr = extractExcelValue(item, [
+            'Kelas',
+            'Nama Kelas',
+            'Rombel',
+            'Tingkat',
+            'Kelas/Rombel',
+            'Nama_Kelas',
+            'Kelompok'
+          ]);
 
-          const rawJk = extractExcelValue(item, ['Jenis Kelamin', 'JenisKelamin', 'JK', 'L/P', 'LP']).toUpperCase();
+          let matchedClass = matchClass(rawClassStr, currentClasses);
+          if (!matchedClass && rawClassStr && rawClassStr.trim().length >= 1) {
+            const cleanClassName = rawClassStr.trim();
+            const fallbackWali = teachers[currentClasses.length % (teachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.';
+            const newClassObj: ClassItem = {
+              id: `cls-auto-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+              namaKelas: cleanClassName,
+              waliKelas: fallbackWali,
+              jumlahSiswa: 0,
+            };
+            currentClasses.push(newClassObj);
+            classesUpdated = true;
+            matchedClass = newClassObj;
+          }
+
+          const classIdToUse = matchedClass ? matchedClass.id : (currentClasses[0]?.id || 'cls-12a');
+
+          const rawJk = extractExcelValue(item, ['Jenis Kelamin', 'JenisKelamin', 'JK', 'L/P', 'LP', 'Sex', 'Gender', 'L / P', 'Kelamin']).toUpperCase();
           const parsedJk: 'L' | 'P' = rawJk.startsWith('P') || rawJk === 'PEREMPUAN' || rawJk === 'FEMALE' ? 'P' : 'L';
 
-          const ttlStr = extractExcelValue(item, ['TTL', 'Tempat Tanggal Lahir', 'Tempat Lahir', 'Tanggal Lahir']) || 'Sumenep, 2006';
+          const ttlStr = extractExcelValue(item, [
+            'TTL',
+            'Tempat Tanggal Lahir',
+            'Tempat Lahir',
+            'Tanggal Lahir',
+            'Tempat, Tanggal Lahir',
+            'Tempat/Tgl Lahir',
+            'Tempat & Tgl Lahir'
+          ]) || 'Sumenep, 2006';
 
           const sObj: StudentItem = {
             id: `sis-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
@@ -960,36 +1051,53 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             status: 'Aktif',
           };
 
-          imported.push(sObj);
+          validImportedRows.push({ student: sObj, row: item });
         });
 
-        if (imported.length === 0) {
+        if (validImportedRows.length === 0) {
           showToast('Tidak ada data Siswa valid yang ditemukan dalam file Excel.');
           return;
         }
 
-        // Upsert Students
+        if (classesUpdated) {
+          setClasses([...currentClasses]);
+          storageService.saveClasses(currentClasses, true);
+        }
+
         let updatedStudents = [...students];
-        imported.forEach((s) => {
-          updatedStudents = updatedStudents.filter(
-            (existing) =>
-              existing.id !== s.id &&
-              existing.nisn !== s.nisn &&
-              existing.nama.toLowerCase().trim() !== s.nama.toLowerCase().trim()
-          );
+        validImportedRows.forEach(({ student: s }) => {
+          const cleanNisn = s.nisn.trim();
+          const isRealNisn = cleanNisn.length >= 4 && !isGenericValue(cleanNisn);
+
+          updatedStudents = updatedStudents.filter((existing) => {
+            if (existing.id === s.id) return false;
+            if (isRealNisn && existing.nisn.trim() === cleanNisn) return false;
+            if (
+              existing.nama.toLowerCase().trim() === s.nama.toLowerCase().trim() &&
+              existing.kelasId === s.kelasId
+            ) return false;
+            return true;
+          });
+
           updatedStudents.push(s);
         });
+
+        const finalClasses = currentClasses.map((c) => ({
+          ...c,
+          jumlahSiswa: updatedStudents.filter((st) => st.kelasId === c.id).length,
+        }));
+        setClasses(finalClasses);
+        storageService.saveClasses(finalClasses, true);
+
         setStudents(updatedStudents);
         storageService.saveStudents(updatedStudents, true);
 
-        // Upsert User Accounts for Students
         const currentUsers = users || storageService.getUsers() || [];
         let updatedUsersList = [...currentUsers];
 
-        imported.forEach((s, idx) => {
-          const row = data[idx] || {};
-          const customUser = extractExcelValue(row, ['User', 'Username', 'Akun']).toLowerCase().trim().replace(/\.0$/, '');
-          const customPass = extractExcelValue(row, ['Password', 'Pass', 'Sandi', 'PIN']).trim();
+        validImportedRows.forEach(({ student: s, row }) => {
+          const customUser = extractExcelValue(row, ['User', 'Username', 'Akun', 'ID User']).toLowerCase().trim().replace(/\.0$/, '');
+          const customPass = extractExcelValue(row, ['Password', 'Pass', 'Sandi', 'PIN', 'Sandi Akun', 'Kata Sandi']).trim();
 
           let baseUname = customUser || s.nisn.toLowerCase();
           let unameToUse = baseUname;
@@ -1033,7 +1141,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         }
         storageService.saveUsers(updatedUsersList, true);
 
-        showToast(`Berhasil mengimpor & menyimpan ${imported.length} data Siswa ke Database Cloud Firestore!`);
+        showToast(`Berhasil mengimpor & menyimpan ${validImportedRows.length} data Siswa ke Database Cloud Firestore!`);
       } catch (err) {
         console.error('Error importing students Excel:', err);
         showToast('Gagal membaca file Excel Siswa.');
@@ -1108,12 +1216,16 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
           return;
         }
 
-        const imported: ClassItem[] = data.map((item, idx) => ({
-          id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-          namaKelas: extractExcelValue(item, ['NamaKelas', 'Nama Kelas', 'Kelas', 'Nama']) || `Kelas ${idx + 1}`,
-          waliKelas: extractExcelValue(item, ['WaliKelas', 'Wali Kelas', 'Wali']) || 'Belum Ditentukan',
-          jumlahSiswa: Number(extractExcelValue(item, ['JumlahSiswa', 'Jumlah Siswa', 'Jumlah'])) || 0,
-        }));
+        const imported: ClassItem[] = data.map((item, idx) => {
+          const rawWali = extractExcelValue(item, ['WaliKelas', 'Wali Kelas', 'Wali']);
+          const matchedWali = matchTeacher(rawWali, teachers);
+          return {
+            id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+            namaKelas: extractExcelValue(item, ['NamaKelas', 'Nama Kelas', 'Kelas', 'Nama']) || `Kelas ${idx + 1}`,
+            waliKelas: matchedWali ? matchedWali.nama : (teachers[idx % (teachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.'),
+            jumlahSiswa: Number(extractExcelValue(item, ['JumlahSiswa', 'Jumlah Siswa', 'Jumlah'])) || 0,
+          };
+        });
 
         const updatedClasses = [...classes, ...imported];
         setClasses(updatedClasses);
@@ -2008,13 +2120,18 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
                 </div>
                 <div>
                   <label className="block font-medium text-slate-400 mb-1">Wali Kelas</label>
-                  <input
-                    type="text"
-                    placeholder="Nama Guru Wali Kelas"
+                  <select
                     value={newKelas.waliKelas}
                     onChange={(e) => setNewKelas({ ...newKelas, waliKelas: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-100"
-                  />
+                  >
+                    <option value="Belum Ditentukan">-- Pilih Wali Kelas (Dari Data Guru) --</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.nama}>
+                        {t.nama}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <button
                   type="submit"
@@ -2325,12 +2442,18 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
               </div>
               <div>
                 <label className="block font-medium text-slate-400 mb-1">Wali Kelas</label>
-                <input
-                  type="text"
+                <select
                   value={editingKelas.waliKelas}
                   onChange={(e) => setEditingKelas({ ...editingKelas, waliKelas: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-100"
-                />
+                >
+                  <option value="Belum Ditentukan">-- Pilih Wali Kelas (Dari Data Guru) --</option>
+                  {teachers.map((t) => (
+                    <option key={t.id} value={t.nama}>
+                      {t.nama}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block font-medium text-slate-400 mb-1">Jumlah Siswa</label>
