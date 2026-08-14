@@ -667,9 +667,33 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
   // --- TEMPLATES DOWNLOAD & UPLOAD ---
   const downloadTemplateGuru = () => {
     const templateData = [
-      { Nama: 'H. Moh. Ridwan, S.Ag', NUPTK: '198001012005011001', Mengajar: 'Fiqih, Usul Fiqih', User: '198001012005011001', Password: '123' },
-      { Nama: 'Drs. Ahmad Fauzi, M.Pd.', NUPTK: '197508152002121003', Mengajar: 'Matematika Wajib, Fisika', User: '197508152002121003', Password: '123' },
-      { Nama: 'Ustdzh. Siti Aminah, S.Pd', NUPTK: '198502022008022002', Mengajar: 'Bahasa Arab', User: '198502022008022002', Password: '123' },
+      {
+        Nama: 'H. Moh. Ridwan, S.Ag',
+        NUPTK: '198001012005011001',
+        Mengajar: 'Fiqih, Usul Fiqih',
+        Email: 'ridwan@al-amien.sch.id',
+        'Nomer HP': '081234567890',
+        User: '198001012005011001',
+        Password: '123'
+      },
+      {
+        Nama: 'Drs. Ahmad Fauzi, M.Pd.',
+        NUPTK: '197508152002121003',
+        Mengajar: 'Matematika Wajib, Fisika',
+        Email: 'ahmadfauzi@al-amien.sch.id',
+        'Nomer HP': '081234567891',
+        User: '197508152002121003',
+        Password: '123'
+      },
+      {
+        Nama: 'Ustdzh. Siti Aminah, S.Pd',
+        NUPTK: '198502022008022002',
+        Mengajar: 'Bahasa Arab',
+        Email: 'sitiaminah@al-amien.sch.id',
+        'Nomer HP': '081234567892',
+        User: '198502022008022002',
+        Password: '123'
+      },
     ];
     exportToExcel(templateData, 'Template_Data_Guru_MAS_Al_Amien', 'Template Guru', settings, true);
   };
@@ -794,8 +818,34 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             })
             .map((s) => s.id);
 
-          const emailVal = extractExcelValue(item, ['Email', 'E-mail', 'Surel']) || `${teacherNuptk}@al-amien.sch.id`;
-          const phoneVal = extractExcelValue(item, ['Telepon', 'No HP', 'NoHP', 'HP', 'WA', 'Telp']) || '08123456789';
+          const emailVal =
+            extractExcelValue(item, [
+              'Email',
+              'E-mail',
+              'Surel',
+              'Alamat Email',
+              'Mail',
+              'E Mail',
+            ]) || `${teacherNuptk}@al-amien.sch.id`;
+
+          const phoneVal =
+            extractExcelValue(item, [
+              'Nomer HP',
+              'Nomor HP',
+              'No HP',
+              'NoHP',
+              'Telepon',
+              'No Telepon',
+              'Nomor Telepon',
+              'Nomer Telepon',
+              'HP',
+              'WA',
+              'Telp',
+              'Handphone',
+              'Phone',
+              'No. HP',
+              'No. Telp'
+            ]) || '081234567890';
 
           let customUser = extractExcelValue(item, ['User', 'Username', 'Akun']).toLowerCase().trim();
           customUser = customUser.replace(/\.0$/, '');
