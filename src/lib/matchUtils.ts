@@ -288,13 +288,14 @@ export function sanitizeAndDeduplicateClasses(
     const lowerName = rawName.toLowerCase();
     const cleanName = cleanStr(rawName);
 
-    // Skip legacy, junk, or header names
+    // Skip legacy, junk, or header names, or raw ID strings
     if (
       LEGACY_CLASS_IDS.has(c.id) ||
       LEGACY_CLASS_NAMES.has(lowerName) ||
       INVALID_CLASS_NAMES.has(lowerName) ||
       INVALID_CLASS_NAMES.has(cleanName) ||
-      rawName.length < 1
+      rawName.length < 1 ||
+      /^cls[-_]/i.test(rawName)
     ) {
       continue;
     }
@@ -667,14 +668,18 @@ export function sanitizeAndDeduplicateTeachers(teachers: TeacherItem[]): Teacher
   for (const t of teachers) {
     if (!t || isLegacyDummyTeacher(t)) continue;
     const nuptk = (t.nuptk || '').trim();
-    const nama = (t.nama || '').trim().toLowerCase();
+    const rawNama = (t.nama || '').trim();
+    const nama = rawNama.toLowerCase();
     const id = (t.id || '').trim();
 
-    if (nuptk && seenNuptks.has(nuptk)) continue;
+    // Skip teachers whose name is an internal ID like guru-imp-... or usr-...
+    if (/^(guru|usr|tch|tchr)[-_]/i.test(rawNama) || rawNama.length < 2) continue;
+
+    if (nuptk && nuptk !== '-' && seenNuptks.has(nuptk)) continue;
     if (nama && seenNames.has(nama)) continue;
     if (id && seenIds.has(id)) continue;
 
-    if (nuptk) seenNuptks.add(nuptk);
+    if (nuptk && nuptk !== '-') seenNuptks.add(nuptk);
     if (nama) seenNames.add(nama);
     if (id) seenIds.add(id);
 
@@ -771,6 +776,72 @@ export function sanitizeAndDeduplicateSchedules(schedules: ScheduleItem[]): Sche
   }
 
   return cleaned;
+}
+
+/**
+ * Safely get a human-readable display name for a class, avoiding raw ID codes like cls-auto-xxx or cls-imp-xxx.
+ */
+export function getDisplayClassName(kelasIdOrName: string | undefined | null, classes: ClassItem[] = []): string {
+  if (!kelasIdOrName || !kelasIdOrName.trim()) {
+    return classes[0]?.namaKelas || 'Kelas';
+  }
+  const raw = kelasIdOrName.trim();
+  const matched = matchClass(raw, classes);
+  if (matched && matched.namaKelas && !/^cls[-_]/i.test(matched.namaKelas)) {
+    return matched.namaKelas;
+  }
+  if (!/^cls[-_]/i.test(raw)) {
+    return raw;
+  }
+  const byId = classes.find((c) => c.id === raw);
+  if (byId && byId.namaKelas && !/^cls[-_]/i.test(byId.namaKelas)) {
+    return byId.namaKelas;
+  }
+  return classes[0]?.namaKelas || 'Kelas';
+}
+
+/**
+ * Safely get a human-readable display name for a teacher, avoiding raw ID codes like guru-imp-xxx or usr-xxx.
+ */
+export function getDisplayTeacherName(guruIdOrName: string | undefined | null, teachers: TeacherItem[] = []): string {
+  if (!guruIdOrName || !guruIdOrName.trim()) {
+    return teachers[0]?.nama || 'Guru Pengajar';
+  }
+  const raw = guruIdOrName.trim();
+  const matched = matchTeacher(raw, teachers);
+  if (matched && matched.nama && !/^(guru|usr|tch|tchr)[-_]/i.test(matched.nama)) {
+    return matched.nama;
+  }
+  if (!/^(guru|usr|tch|tchr)[-_]/i.test(raw)) {
+    return raw;
+  }
+  const byId = teachers.find((t) => t.id === raw);
+  if (byId && byId.nama && !/^(guru|usr|tch|tchr)[-_]/i.test(byId.nama)) {
+    return byId.nama;
+  }
+  return teachers[0]?.nama || 'Guru Pengajar';
+}
+
+/**
+ * Safely get a human-readable display name for a subject, avoiding raw ID codes like sub-imp-xxx.
+ */
+export function getDisplaySubjectName(mapelIdOrName: string | undefined | null, subjects: SubjectItem[] = []): string {
+  if (!mapelIdOrName || !mapelIdOrName.trim()) {
+    return subjects[0]?.namaMapel || 'Mata Pelajaran';
+  }
+  const raw = mapelIdOrName.trim();
+  const matched = matchSubject(raw, subjects);
+  if (matched && matched.namaMapel && !/^(sub|mp|mapel)[-_]/i.test(matched.namaMapel)) {
+    return matched.namaMapel;
+  }
+  if (!/^(sub|mp|mapel)[-_]/i.test(raw)) {
+    return raw;
+  }
+  const byId = subjects.find((s) => s.id === raw || s.kode === raw);
+  if (byId && byId.namaMapel && !/^(sub|mp|mapel)[-_]/i.test(byId.namaMapel)) {
+    return byId.namaMapel;
+  }
+  return subjects[0]?.namaMapel || 'Mata Pelajaran';
 }
 
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ScheduleItem, User, SubjectItem, ClassItem, TeacherItem } from '../../types';
 import { Calendar, Clock, BookOpen, UserCheck, Filter } from 'lucide-react';
-import { sortSchedulesByJam } from '../../lib/matchUtils';
+import { sortSchedulesByJam, getDisplayTeacherName, getDisplaySubjectName } from '../../lib/matchUtils';
 
 interface SiswaJadwalProps {
   currentUser: User;
@@ -78,8 +78,9 @@ export const SiswaJadwal: React.FC<SiswaJadwalProps> = ({
               ) : (
                 <div className="space-y-2.5">
                   {daySchedules.map((s) => {
+                    const displayMapel = getDisplaySubjectName(s.mapelId, subjects);
+                    const displayGuru = getDisplayTeacherName(s.guruId, teachers);
                     const mapel = subjects.find((m) => m.id === s.mapelId);
-                    const guru = teachers.find((t) => t.id === s.guruId);
 
                     return (
                       <div key={s.id} className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs hover:border-emerald-500/50 transition">
@@ -93,14 +94,12 @@ export const SiswaJadwal: React.FC<SiswaJadwalProps> = ({
                         </div>
                         <p className="font-bold text-white text-sm mt-1 flex items-center gap-1.5">
                           <BookOpen className="w-3.5 h-3.5 text-amber-300 flex-shrink-0" />
-                          <span>{mapel?.namaMapel || 'Mata Pelajaran'}</span>
+                          <span>{displayMapel}</span>
                         </p>
-                        {guru && (
-                          <p className="text-slate-400 text-[11px] mt-1 flex items-center gap-1">
-                            <UserCheck className="w-3 h-3 text-slate-500" />
-                            <span>Pengajar: {guru.nama}</span>
-                          </p>
-                        )}
+                        <p className="text-slate-400 text-[11px] mt-1 flex items-center gap-1">
+                          <UserCheck className="w-3 h-3 text-slate-500" />
+                          <span>Pengajar: {displayGuru}</span>
+                        </p>
                       </div>
                     );
                   })}

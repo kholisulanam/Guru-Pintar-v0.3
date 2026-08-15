@@ -338,6 +338,10 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       setLibraryBooks([]);
       storageService.saveLibraryBooks([]);
       showToast('Semua data Buku Perpustakaan berhasil dihapus.');
+    } else if (deleteAllCategory === 'jadwal') {
+      if (setSchedules) setSchedules([]);
+      storageService.saveSchedules([], true);
+      showToast('Semua data Jadwal Pelajaran berhasil dihapus.');
     }
     setDeleteAllCategory(null);
   };

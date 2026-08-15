@@ -3,7 +3,18 @@ import { ScheduleItem, TeacherItem, SubjectItem, ClassItem } from '../../types';
 import { Calendar, Plus, Trash2, Edit, Download, Upload, Filter, Clock, CheckCircle2, Check, X } from 'lucide-react';
 import { exportToExcel } from '../../lib/exportUtils';
 import { storageService } from '../../lib/storage';
-import { matchTeacher, matchSubject, matchClass, cleanStr, sortSchedulesByJam, isTeacherMatch } from '../../lib/matchUtils';
+import {
+  matchTeacher,
+  matchSubject,
+  matchClass,
+  cleanStr,
+  sortSchedulesByJam,
+  isTeacherMatch,
+  getDisplayClassName,
+  getDisplayTeacherName,
+  getDisplaySubjectName,
+  sanitizeAndDeduplicateSchedules,
+} from '../../lib/matchUtils';
 import * as XLSX from 'xlsx';
 
 interface AdminJadwalProps {
@@ -72,41 +83,57 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
       guruId: newGuruId,
       mapelId: newMapelId,
     };
-    setSchedules((prev) => [...prev, added]);
+    const updated = sanitizeAndDeduplicateSchedules([...schedules, added]);
+    setSchedules(updated);
+    storageService.saveSchedules(updated, true);
     showToast('Jadwal pelajaran berhasil ditambahkan!');
   };
 
   const handleUpdateJadwal = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSchedule) return;
-    setSchedules((prev) => prev.map((s) => (s.id === editingSchedule.id ? editingSchedule : s)));
+    const updated = sanitizeAndDeduplicateSchedules(schedules.map((s) => (s.id === editingSchedule.id ? editingSchedule : s)));
+    setSchedules(updated);
+    storageService.saveSchedules(updated, true);
     showToast('Perubahan jadwal pelajaran berhasil disimpan!');
     setEditingSchedule(null);
   };
 
   const confirmDeleteJadwal = () => {
     if (!deleteScheduleId) return;
-    setSchedules((prev) => prev.filter((s) => s.id !== deleteScheduleId));
+    const updated = schedules.filter((s) => s.id !== deleteScheduleId);
+    setSchedules(updated);
+    storageService.saveSchedules(updated, true);
     showToast('Jadwal pelajaran berhasil dihapus.');
     setDeleteScheduleId(null);
   };
 
   const confirmDeleteAllJadwal = () => {
-    if (selectedHariFilter !== 'Semua' || selectedKelasFilter !== 'Semua') {
-      setSchedules((prev) => prev.filter((s) => !filteredSchedules.some((fs) => fs.id === s.id)));
+    if (selectedHariFilter !== 'Semua' || selectedKelasFilter !== 'Semua' || selectedGuruFilter !== 'Semua') {
+      const remaining = schedules.filter((s) => !filteredSchedules.some((fs) => fs.id === s.id));
+      setSchedules(remaining);
+      storageService.saveSchedules(remaining, true);
       showToast('Semua jadwal pelajaran yang difilter berhasil dihapus!');
     } else {
       setSchedules([]);
+      storageService.saveSchedules([], true);
       showToast('Semua data jadwal pelajaran berhasil dikosongkan!');
     }
     setShowDeleteAllModal(false);
   };
 
   const downloadTemplate = () => {
+    const sampleKelas1 = classes[0]?.namaKelas || 'XII IPA 1';
+    const sampleKelas2 = classes[1]?.namaKelas || 'XI IPA 1';
+    const sampleGuru1 = teachers[0]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.';
+    const sampleGuru2 = teachers[1]?.nama || 'Nur Aida, S.Pd.I.';
+    const sampleMapel1 = subjects[0]?.namaMapel || 'Fiqih';
+    const sampleMapel2 = subjects[1]?.namaMapel || 'Bahasa Arab';
+
     const templateData = [
-      { Hari: 'Senin', JamKe: '07.00-07.40', Kelas: 'XII IPA 1', Guru: 'SYAIFUDIN KUDSI, SHI. MA.', Mapel: 'Fiqih' },
-      { Hari: 'Senin', JamKe: '07.40-08.20', Kelas: 'XII IPA 1', Guru: 'Nur Aida, S.Pd.I.', Mapel: 'Bahasa Arab' },
-      { Hari: 'Selasa', JamKe: '07.00-07.40', Kelas: 'XI IPA 1', Guru: 'NURUL HIDAYATI, M.Pd.', Mapel: 'Matematika' },
+      { Hari: 'Senin', JamKe: '07.00-07.40', Kelas: sampleKelas1, Guru: sampleGuru1, Mapel: sampleMapel1 },
+      { Hari: 'Senin', JamKe: '07.40-08.20', Kelas: sampleKelas1, Guru: sampleGuru2, Mapel: sampleMapel2 },
+      { Hari: 'Selasa', JamKe: '07.00-07.40', Kelas: sampleKelas2, Guru: sampleGuru1, Mapel: sampleMapel1 },
     ];
     exportToExcel(templateData, 'Template_Jadwal_Pelajaran_MAS_Al_Amien', 'Jadwal Hari');
   };
@@ -144,10 +171,10 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
 
           const rawJam = String(item.JamKe || item.jamKe || item['Jam Ke'] || item.Jam || '07.00-07.40').trim();
 
-          const rawKelas = String(item.Kelas || item.kelas || '').trim();
+          const rawKelas = String(item.Kelas || item.kelas || item['Nama Kelas'] || item.Rombel || '').trim();
           let matchedClass = matchClass(rawKelas, curClasses);
-          if (!matchedClass && rawKelas && rawKelas.length >= 1) {
-            const fallbackWali = curTeachers[curClasses.length % (curTeachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.';
+          if (!matchedClass && rawKelas && rawKelas.length >= 1 && !rawKelas.startsWith('cls-')) {
+            const fallbackWali = curTeachers[curClasses.length % (curTeachers.length || 1)]?.nama || '-';
             matchedClass = {
               id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
               namaKelas: rawKelas,
@@ -158,12 +185,27 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             classesAdded = true;
           }
 
-          const rawGuru = String(item.Guru || item.guru || '').trim();
+          const rawGuru = String(item.Guru || item.guru || item['Nama Guru'] || item.Pengajar || item['Guru Pengajar'] || '').trim();
           let matchedGuru = matchTeacher(rawGuru, curTeachers);
+          if (!matchedGuru && rawGuru && rawGuru.length >= 2 && !rawGuru.startsWith('guru-') && !rawGuru.startsWith('usr-')) {
+            const newTeacherId = `guru-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`;
+            matchedGuru = {
+              id: newTeacherId,
+              nama: rawGuru,
+              nipNuptk: '-',
+              nuptk: '-',
+              email: `${rawGuru.toLowerCase().replace(/[^a-z0-9]/g, '')}@al-amien.sch.id`,
+              telepon: '081234567890',
+              mengajarMapel: String(item.Mapel || item.mapel || '').trim(),
+              status: 'Aktif',
+            };
+            curTeachers.push(matchedGuru);
+            teachersAdded = true;
+          }
 
-          const rawMapel = String(item.Mapel || item.mapel || '').trim();
+          const rawMapel = String(item.Mapel || item.mapel || item['Nama Mapel'] || item['Mata Pelajaran'] || '').trim();
           let matchedMapel = matchSubject(rawMapel, curSubjects);
-          if (!matchedMapel && rawMapel) {
+          if (!matchedMapel && rawMapel && !rawMapel.startsWith('sub-')) {
             matchedMapel = {
               id: `sub-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
               kode: `MP-${curSubjects.length + 1}`,
@@ -174,13 +216,17 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             subjectsAdded = true;
           }
 
+          const finalClassId = matchedClass?.id || (curClasses.find(c => c.id === rawKelas || c.namaKelas === rawKelas)?.id) || curClasses[0]?.id || 'cls-1';
+          const finalGuruId = matchedGuru?.id || (curTeachers.find(t => t.id === rawGuru || t.nama === rawGuru)?.id) || curTeachers[0]?.id || 'guru-1';
+          const finalMapelId = matchedMapel?.id || (curSubjects.find(s => s.id === rawMapel || s.namaMapel === rawMapel)?.id) || curSubjects[0]?.id || 'sub-1';
+
           return {
             id: `sch-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
             hari: validHari,
             jamKe: rawJam,
-            kelasId: matchedClass?.id || rawKelas || curClasses[0]?.id || 'cls-12a',
-            guruId: matchedGuru?.id || curTeachers[0]?.id || 'usr-guru1',
-            mapelId: matchedMapel?.id || rawMapel || curSubjects[0]?.id || 'sub-1',
+            kelasId: finalClassId,
+            guruId: finalGuruId,
+            mapelId: finalMapelId,
           };
         });
 
@@ -197,10 +243,10 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
           storageService.saveClasses(curClasses, true);
         }
 
-        const updatedSchedules = [...schedules, ...imported];
-        setSchedules(updatedSchedules);
-        storageService.saveSchedules(updatedSchedules, true);
-        showToast(`Berhasil mengimpor & menyimpan ${imported.length} data jadwal pelajaran ke Database Cloud Firestore!`);
+        const sanitizedImported = sanitizeAndDeduplicateSchedules(imported);
+        setSchedules(sanitizedImported);
+        storageService.saveSchedules(sanitizedImported, true);
+        showToast(`Berhasil mengimpor ${sanitizedImported.length} data jadwal pelajaran dari template ke Cloud Firestore!`);
       } catch (err) {
         console.error('Error parsing Excel schedule template:', err);
         showToast('Gagal mengimpor file template jadwal.');
@@ -442,9 +488,9 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
                 const mapel = matchSubject(sch.mapelId, subjects);
                 const kelas = matchClass(sch.kelasId, classes);
 
-                const displayKelas = kelas?.namaKelas || sch.kelasId || '-';
-                const displayMapel = mapel?.namaMapel || sch.mapelId || '-';
-                const displayGuru = guru?.nama || sch.guruId || '-';
+                const displayKelas = getDisplayClassName(sch.kelasId, classes);
+                const displayMapel = getDisplaySubjectName(sch.mapelId, subjects);
+                const displayGuru = getDisplayTeacherName(sch.guruId, teachers);
 
                 return (
                   <tr key={sch.id} className="hover:bg-slate-800/50 transition">

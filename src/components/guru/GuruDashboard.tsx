@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, ScheduleItem, TeacherAttendance, TeachingJournal, Assessment, SubjectItem, ClassItem, AssessmentSubmission, StudentItem } from '../../types';
 import { getTodayString } from '../../lib/storage';
 import { canUserAccessAssessment } from '../../lib/assessmentUtils';
-import { sortSchedulesByJam, isTeacherMatch } from '../../lib/matchUtils';
+import { sortSchedulesByJam, isTeacherMatch, getDisplayClassName, getDisplaySubjectName } from '../../lib/matchUtils';
 import { 
   Clock, CalendarCheck, BookOpen, FileCheck, CheckCircle2, AlertCircle, ArrowRight,
   BellRing, Calendar, Sparkles, AlertTriangle, FileSpreadsheet, ListChecks, Filter, Users, ChevronRight
@@ -467,8 +467,8 @@ export const GuruDashboard: React.FC<GuruDashboardProps> = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {todaySchedules.map((sch) => {
-              const mapel = subjects.find((m) => m.id === sch.mapelId);
-              const kelas = classes.find((c) => c.id === sch.kelasId);
+              const displayMapel = getDisplaySubjectName(sch.mapelId, subjects);
+              const displayKelas = getDisplayClassName(sch.kelasId, classes);
 
               return (
                 <div
@@ -479,8 +479,8 @@ export const GuruDashboard: React.FC<GuruDashboardProps> = ({
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
                       {sch.jamKe}
                     </span>
-                    <h4 className="font-bold text-white text-sm mt-1">{mapel?.namaMapel}</h4>
-                    <p className="text-indigo-200/70">Kelas: <span className="font-semibold text-amber-300">{kelas?.namaKelas}</span></p>
+                    <h4 className="font-bold text-white text-sm mt-1">{displayMapel}</h4>
+                    <p className="text-indigo-200/70">Kelas: <span className="font-semibold text-amber-300">{displayKelas}</span></p>
                   </div>
 
                   <button

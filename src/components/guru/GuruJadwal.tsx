@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ScheduleItem, User, SubjectItem, ClassItem, TeacherItem } from '../../types';
 import { Calendar, Clock, Filter } from 'lucide-react';
-import { sortSchedulesByJam, isTeacherMatch } from '../../lib/matchUtils';
+import { sortSchedulesByJam, isTeacherMatch, getDisplayClassName, getDisplayTeacherName, getDisplaySubjectName } from '../../lib/matchUtils';
 
 interface GuruJadwalProps {
   currentUser: User;
@@ -86,20 +86,21 @@ export const GuruJadwal: React.FC<GuruJadwalProps> = ({
               ) : (
                 <div className="space-y-2">
                   {daySchedules.map((s) => {
-                    const mapel = subjects.find((m) => m.id === s.mapelId);
-                    const kelas = classes.find((c) => c.id === s.kelasId);
+                    const displayMapel = getDisplaySubjectName(s.mapelId, subjects);
+                    const displayKelas = getDisplayClassName(s.kelasId, classes);
+                    const displayGuru = getDisplayTeacherName(s.guruId, teachers);
 
                     return (
                       <div key={s.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs">
                         <p className="font-mono text-emerald-400 font-bold flex items-center gap-1">
                           <Clock className="w-3 h-3" /> {s.jamKe}
                         </p>
-                        <p className="font-bold text-white mt-1">{mapel?.namaMapel || s.mapelId || '-'}</p>
+                        <p className="font-bold text-white mt-1">{displayMapel}</p>
                         <div className="flex items-center justify-between mt-1 text-[11px] text-slate-400">
-                          <span>Kelas: <strong className="text-teal-300">{kelas?.namaKelas || s.kelasId || '-'}</strong></span>
+                          <span>Kelas: <strong className="text-teal-300">{displayKelas}</strong></span>
                           {selectedGuruFilter === 'Semua' && (
                             <span className="text-slate-300 font-medium truncate max-w-[120px]">
-                              {teachers.find((t) => t.id === s.guruId)?.nama || s.guruId}
+                              {displayGuru}
                             </span>
                           )}
                         </div>

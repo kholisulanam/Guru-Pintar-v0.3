@@ -317,11 +317,7 @@ export function subscribeToFirebaseKey<T>(key: string, onData: (data: T) => void
             let finalVal = cloudVal;
 
             if (Array.isArray(cloudVal)) {
-              if (localVal && Array.isArray(localVal)) {
-                finalVal = mergeArrays(key, cloudVal, localVal);
-              } else {
-                finalVal = deduplicateItems(key, cloudVal);
-              }
+              finalVal = deduplicateItems(key, cloudVal);
             }
 
             const finalSerialized = JSON.stringify(finalVal);
@@ -331,15 +327,6 @@ export function subscribeToFirebaseKey<T>(key: string, onData: (data: T) => void
                 localStorage.setItem(rawKey, finalSerialized);
               } catch (e) {}
               onData(finalVal as T);
-
-              // Resync merged result to Firestore if local items were merged into cloud
-              if (Array.isArray(cloudVal) && Array.isArray(finalVal) && finalVal.length > cloudVal.length) {
-                if (!isQuotaExceeded) {
-                  setDoc(docRef, { payload: finalVal, updatedAt: new Date().toISOString() }).catch((err) => {
-                    console.warn(`Resync merged data error for ${key}:`, err);
-                  });
-                }
-              }
             }
           }
         } else {

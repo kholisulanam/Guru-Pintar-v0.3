@@ -11,7 +11,7 @@ import {
 } from '../../types';
 import { getTodayString } from '../../lib/storage';
 import { canUserAccessAssessment } from '../../lib/assessmentUtils';
-import { sortSchedulesByJam } from '../../lib/matchUtils';
+import { sortSchedulesByJam, getDisplaySubjectName } from '../../lib/matchUtils';
 import { Clock, CheckCircle2, Bell, FileCheck, BookOpen, ArrowRight, Award } from 'lucide-react';
 
 interface SiswaDashboardProps {
@@ -148,14 +148,14 @@ export const SiswaDashboard: React.FC<SiswaDashboardProps> = ({
           ) : (
             <div className="space-y-2">
               {todaySchedules.map((sch) => {
-                const mapel = subjects.find((m) => m.id === sch.mapelId);
+                const displayMapel = getDisplaySubjectName(sch.mapelId, subjects);
                 return (
                   <div
                     key={sch.id}
                     className="bg-white/5 backdrop-blur-md p-3.5 rounded-2xl border border-white/10 flex items-center justify-between text-xs hover:bg-white/10 transition"
                   >
                     <div>
-                      <p className="font-bold text-white">{mapel?.namaMapel}</p>
+                      <p className="font-bold text-white">{displayMapel}</p>
                       <p className="text-[10px] text-indigo-200/70">Jam: {sch.jamKe}</p>
                     </div>
                     <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
