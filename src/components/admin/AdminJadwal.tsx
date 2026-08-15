@@ -10,12 +10,97 @@ import {
   cleanStr,
   sortSchedulesByJam,
   isTeacherMatch,
+  isClassMatch,
   getDisplayClassName,
   getDisplayTeacherName,
   getDisplaySubjectName,
   sanitizeAndDeduplicateSchedules,
+  sanitizeAndDeduplicateClasses,
 } from '../../lib/matchUtils';
 import * as XLSX from 'xlsx';
+
+function extractExcelValue(row: any, candidateKeys: string[]): string {
+  if (!row || typeof row !== 'object') return '';
+  const rowKeys = Object.keys(row);
+
+  // 1. Exact cleaned key match
+  for (const cand of candidateKeys) {
+    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const key of rowKeys) {
+      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (keyClean === candClean) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+
+  // 2. Substring key match
+  for (const cand of candidateKeys) {
+    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!candClean) continue;
+    for (const key of rowKeys) {
+      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (keyClean.includes(candClean)) {
+        const val = row[key];
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          return String(val).trim();
+        }
+      }
+    }
+  }
+
+  return '';
+}
+
+function readExcelRows(ws: XLSX.WorkSheet): any[] {
+  const matrix: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  if (!matrix || matrix.length === 0) return [];
+
+  // Find header row index
+  let headerRowIndex = 0;
+  for (let r = 0; r < matrix.length; r++) {
+    const row = matrix[r];
+    if (!Array.isArray(row)) continue;
+    const rowStr = row.map((cell) => String(cell || '').toLowerCase()).join(' ');
+    if (
+      rowStr.includes('hari') ||
+      rowStr.includes('jam') ||
+      rowStr.includes('kelas') ||
+      rowStr.includes('rombel') ||
+      rowStr.includes('guru') ||
+      rowStr.includes('pengajar') ||
+      rowStr.includes('mapel')
+    ) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+
+  const headers = (matrix[headerRowIndex] || []).map((h) => String(h || '').trim());
+  if (!headers || headers.length === 0) return [];
+
+  const result: any[] = [];
+  for (let r = headerRowIndex + 1; r < matrix.length; r++) {
+    const row = matrix[r];
+    if (!Array.isArray(row)) continue;
+    const hasContent = row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== '');
+    if (!hasContent) continue;
+
+    const rowObj: Record<string, string> = {};
+    headers.forEach((hKey, colIdx) => {
+      if (hKey) {
+        const val = row[colIdx];
+        rowObj[hKey] = val !== undefined && val !== null ? String(val).trim() : '';
+      }
+    });
+    result.push(rowObj);
+  }
+
+  return result;
+}
 
 interface AdminJadwalProps {
   schedules: ScheduleItem[];
@@ -123,8 +208,9 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
   };
 
   const downloadTemplate = () => {
-    const sampleKelas1 = classes[0]?.namaKelas || 'XII IPA 1';
-    const sampleKelas2 = classes[1]?.namaKelas || 'XI IPA 1';
+    const sampleKelas1 = classes[0]?.namaKelas || 'X-A';
+    const sampleKelas2 = classes[1]?.namaKelas || 'XI-A';
+    const sampleKelas3 = classes[2]?.namaKelas || 'XII-A';
     const sampleGuru1 = teachers[0]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.';
     const sampleGuru2 = teachers[1]?.nama || 'Nur Aida, S.Pd.I.';
     const sampleMapel1 = subjects[0]?.namaMapel || 'Fiqih';
@@ -133,7 +219,8 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
     const templateData = [
       { Hari: 'Senin', JamKe: '07.00-07.40', Kelas: sampleKelas1, Guru: sampleGuru1, Mapel: sampleMapel1 },
       { Hari: 'Senin', JamKe: '07.40-08.20', Kelas: sampleKelas1, Guru: sampleGuru2, Mapel: sampleMapel2 },
-      { Hari: 'Selasa', JamKe: '07.00-07.40', Kelas: sampleKelas2, Guru: sampleGuru1, Mapel: sampleMapel1 },
+      { Hari: 'Senin', JamKe: '07.00-07.40', Kelas: sampleKelas2, Guru: sampleGuru1, Mapel: sampleMapel1 },
+      { Hari: 'Selasa', JamKe: '07.00-07.40', Kelas: sampleKelas3, Guru: sampleGuru2, Mapel: sampleMapel2 },
     ];
     exportToExcel(templateData, 'Template_Jadwal_Pelajaran_MAS_Al_Amien', 'Jadwal Hari');
   };
@@ -148,7 +235,7 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data: any[] = XLSX.utils.sheet_to_json(ws);
+        const data: any[] = readExcelRows(ws);
 
         if (!data || data.length === 0) {
           showToast('File Excel kosong atau format tidak sesuai.');
@@ -164,14 +251,14 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
         let classesAdded = false;
 
         const imported: ScheduleItem[] = data.map((item, idx) => {
-          const rawHari = String(item.Hari || item.hari || 'Sabtu').trim();
-          const validHari: ScheduleItem['hari'] = ['Sabtu', 'Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis'].includes(rawHari)
+          const rawHari = extractExcelValue(item, ['Hari', 'Day', 'Nama Hari', 'NamaHari']) || 'Sabtu';
+          const validHari: ScheduleItem['hari'] = ['Sabtu', 'Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].includes(rawHari)
             ? (rawHari as any)
             : 'Sabtu';
 
-          const rawJam = String(item.JamKe || item.jamKe || item['Jam Ke'] || item.Jam || '07.00-07.40').trim();
+          const rawJam = extractExcelValue(item, ['JamKe', 'Jam Ke', 'Jam', 'Waktu', 'Pukul', 'Time', 'Jam_Ke']) || '07.00-07.40';
 
-          const rawKelas = String(item.Kelas || item.kelas || item['Nama Kelas'] || item.Rombel || '').trim();
+          const rawKelas = extractExcelValue(item, ['Kelas', 'NamaKelas', 'Nama Kelas', 'Rombel', 'Rombongan Belajar', 'RombonganBelajar', 'Tingkat', 'Ruang', 'Class', 'Nama_Kelas']);
           let matchedClass = matchClass(rawKelas, curClasses);
           if (!matchedClass && rawKelas && rawKelas.length >= 1 && !rawKelas.startsWith('cls-')) {
             const fallbackWali = curTeachers[curClasses.length % (curTeachers.length || 1)]?.nama || '-';
@@ -185,7 +272,7 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             classesAdded = true;
           }
 
-          const rawGuru = String(item.Guru || item.guru || item['Nama Guru'] || item.Pengajar || item['Guru Pengajar'] || '').trim();
+          const rawGuru = extractExcelValue(item, ['Guru', 'NamaGuru', 'Nama Guru', 'Pengajar', 'Guru Pengajar', 'GuruPengajar', 'Teacher', 'Pendidik', 'Nama_Guru']);
           let matchedGuru = matchTeacher(rawGuru, curTeachers);
           if (!matchedGuru && rawGuru && rawGuru.length >= 2 && !rawGuru.startsWith('guru-') && !rawGuru.startsWith('usr-')) {
             const newTeacherId = `guru-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`;
@@ -196,14 +283,14 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
               nuptk: '-',
               email: `${rawGuru.toLowerCase().replace(/[^a-z0-9]/g, '')}@al-amien.sch.id`,
               telepon: '081234567890',
-              mengajarMapel: String(item.Mapel || item.mapel || '').trim(),
+              mengajarMapel: extractExcelValue(item, ['Mapel', 'NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'MataPelajaran', 'Pelajaran', 'Subject']),
               status: 'Aktif',
             };
             curTeachers.push(matchedGuru);
             teachersAdded = true;
           }
 
-          const rawMapel = String(item.Mapel || item.mapel || item['Nama Mapel'] || item['Mata Pelajaran'] || '').trim();
+          const rawMapel = extractExcelValue(item, ['Mapel', 'NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'MataPelajaran', 'Pelajaran', 'Subject', 'Nama_Mapel']);
           let matchedMapel = matchSubject(rawMapel, curSubjects);
           if (!matchedMapel && rawMapel && !rawMapel.startsWith('sub-')) {
             matchedMapel = {
@@ -216,9 +303,9 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             subjectsAdded = true;
           }
 
-          const finalClassId = matchedClass?.id || (curClasses.find(c => c.id === rawKelas || c.namaKelas === rawKelas)?.id) || curClasses[0]?.id || 'cls-1';
-          const finalGuruId = matchedGuru?.id || (curTeachers.find(t => t.id === rawGuru || t.nama === rawGuru)?.id) || curTeachers[0]?.id || 'guru-1';
-          const finalMapelId = matchedMapel?.id || (curSubjects.find(s => s.id === rawMapel || s.namaMapel === rawMapel)?.id) || curSubjects[0]?.id || 'sub-1';
+          const finalClassId = matchedClass?.id || (curClasses.find(c => c.id.toLowerCase() === rawKelas.toLowerCase() || c.namaKelas.toLowerCase() === rawKelas.toLowerCase())?.id) || rawKelas || 'cls-1';
+          const finalGuruId = matchedGuru?.id || (curTeachers.find(t => t.id.toLowerCase() === rawGuru.toLowerCase() || t.nama.toLowerCase() === rawGuru.toLowerCase())?.id) || rawGuru || 'guru-1';
+          const finalMapelId = matchedMapel?.id || (curSubjects.find(s => s.id.toLowerCase() === rawMapel.toLowerCase() || s.namaMapel.toLowerCase() === rawMapel.toLowerCase())?.id) || rawMapel || 'sub-1';
 
           return {
             id: `sch-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
@@ -239,8 +326,9 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
           storageService.saveSubjects(curSubjects, true);
         }
         if (classesAdded) {
-          if (setClasses) setClasses(curClasses);
-          storageService.saveClasses(curClasses, true);
+          const sanitizedClasses = sanitizeAndDeduplicateClasses(curClasses, curTeachers);
+          if (setClasses) setClasses(sanitizedClasses);
+          storageService.saveClasses(sanitizedClasses, true);
         }
 
         const sanitizedImported = sanitizeAndDeduplicateSchedules(imported);
@@ -264,7 +352,7 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
   const filteredSchedules = sortSchedulesByJam(
     schedules.filter((s) => {
       const matchHari = selectedHariFilter === 'Semua' || s.hari === selectedHariFilter;
-      const matchKelas = selectedKelasFilter === 'Semua' || s.kelasId === selectedKelasFilter;
+      const matchKelas = selectedKelasFilter === 'Semua' || isClassMatch(s.kelasId, selectedKelasFilter, classes);
       const matchGuru = selectedGuruFilter === 'Semua' || isTeacherMatch(s.guruId, selectedGuruFilter, teachers);
       return matchHari && matchKelas && matchGuru;
     })

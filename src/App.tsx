@@ -92,22 +92,6 @@ import { SiswaPengumuman } from './components/siswa/SiswaPengumuman';
 // CBT Exam Modal
 import { CbtExamModal } from './components/cbt/CbtExamModal';
 
-const LEGACY_CLASS_IDS = new Set(['cls-10ipa1', 'cls-11ipa1', 'cls-12ipa1', 'cls-12ips1']);
-const LEGACY_CLASS_NAMES = new Set([
-  'x ipa 1', 'xi ipa 1', 'xii ipa 1', 'xii ips 1', 'x ips 1',
-  'kelas x ipa 1', 'kelas xi ipa 1', 'kelas xii ipa 1', 'kelas xii ips 1', 'kelas x ips 1'
-]);
-
-function remapLegacyClassId(id: string | undefined): string {
-  if (!id) return 'cls-10a';
-  const clean = id.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (id === 'cls-10ipa1' || clean === '10ipa1' || clean === 'xipa1' || clean === 'xips1') return 'cls-10a';
-  if (id === 'cls-11ipa1' || clean === '11ipa1' || clean === 'xiipa1') return 'cls-11a';
-  if (id === 'cls-12ipa1' || clean === '12ipa1' || clean === 'xiiipa1') return 'cls-12a';
-  if (id === 'cls-12ips1' || clean === '12ips1' || clean === 'xiiips1') return 'cls-12c';
-  return id;
-}
-
 export default function App() {
   // Global State initialized with local storage fallback
   const [users, setUsers] = useState<User[]>(() => {
@@ -115,9 +99,6 @@ export default function App() {
     const baseList = Array.isArray(loaded) ? loaded : defaultUsers;
     return baseList.map((u) => {
       let updated = u;
-      if (u.kelasId) {
-        updated = { ...updated, kelasId: remapLegacyClassId(u.kelasId) };
-      }
       if (u.role === 'siswa' && !updated.password) updated = { ...updated, password: updated.username || '12345678' };
       if (u.role === 'admin' && (updated.password === 'admin123' || updated.password === 'admin2026' || !updated.password)) {
         updated = { ...updated, password: 'admin#123' };
@@ -128,9 +109,6 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<User>(() => {
     const stored = storageService.get<User>('currentUser', users[0] || defaultUsers[0]);
-    if (stored && stored.kelasId) {
-      return { ...stored, kelasId: remapLegacyClassId(stored.kelasId) };
-    }
     return stored || defaultUsers[0];
   });
 
@@ -158,12 +136,7 @@ export default function App() {
 
   const [students, setStudents] = useState<StudentItem[]>(() => {
     const stored = storageService.get<StudentItem[]>('students', []);
-    const cleaned = sanitizeAndDeduplicateStudents(stored || []);
-    const remapped = cleaned.map((s) => ({
-      ...s,
-      kelasId: remapLegacyClassId(s.kelasId),
-    }));
-    return remapped;
+    return sanitizeAndDeduplicateStudents(stored || []);
   });
 
   const [subjects, setSubjects] = useState<SubjectItem[]>(() => {
@@ -173,11 +146,7 @@ export default function App() {
 
   const [schedules, setSchedules] = useState<ScheduleItem[]>(() => {
     const stored = storageService.get<ScheduleItem[]>('schedules', []);
-    const cleaned = sanitizeAndDeduplicateSchedules(stored || []);
-    return cleaned.map((sch) => ({
-      ...sch,
-      kelasId: remapLegacyClassId(sch.kelasId),
-    }));
+    return sanitizeAndDeduplicateSchedules(stored || []);
   });
 
   const [announcements, setAnnouncements] = useState<Announcement[]>(() =>
@@ -186,12 +155,7 @@ export default function App() {
 
   const [assessments, setAssessments] = useState<Assessment[]>(() => {
     const stored = storageService.get<Assessment[]>('assessments', []);
-    return (stored || [])
-      .filter((a) => a && a.id !== 'asm-1' && a.id !== 'asm-2')
-      .map((a) => ({
-        ...a,
-        kelasId: remapLegacyClassId(a.kelasId),
-      }));
+    return (stored || []).filter((a) => a && a.id !== 'asm-1' && a.id !== 'asm-2');
   });
 
   const [submissions, setSubmissions] = useState<AssessmentSubmission[]>(() =>
@@ -208,20 +172,12 @@ export default function App() {
 
   const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>(() => {
     const stored = storageService.get<TeachingJournal[]>('teachingJournals', []);
-    return (stored || [])
-      .filter((tj) => tj && tj.id !== 'tj-1' && tj.id !== 'tj-2')
-      .map((tj) => ({
-        ...tj,
-        kelasId: remapLegacyClassId(tj.kelasId),
-      }));
+    return (stored || []).filter((tj) => tj && tj.id !== 'tj-1' && tj.id !== 'tj-2');
   });
 
   const [gradeRecords, setGradeRecords] = useState<GradeRecord[]>(() => {
     const stored = storageService.get<GradeRecord[]>('gradeRecords', defaultGradeRecords);
-    return stored.map((gr) => ({
-      ...gr,
-      kelasId: remapLegacyClassId(gr.kelasId),
-    }));
+    return (stored || []).filter((gr) => gr && gr.id !== 'gr-1' && gr.id !== 'gr-2');
   });
 
   const [libraryBooks, setLibraryBooks] = useState<LibraryBook[]>(() =>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ScheduleItem, User, SubjectItem, ClassItem, TeacherItem } from '../../types';
 import { Calendar, Clock, BookOpen, UserCheck, Filter } from 'lucide-react';
-import { sortSchedulesByJam, getDisplayTeacherName, getDisplaySubjectName } from '../../lib/matchUtils';
+import { sortSchedulesByJam, getDisplayTeacherName, getDisplaySubjectName, getDisplayClassName, isClassMatch } from '../../lib/matchUtils';
 
 interface SiswaJadwalProps {
   currentUser: User;
@@ -19,12 +19,12 @@ export const SiswaJadwal: React.FC<SiswaJadwalProps> = ({
   teachers = [],
 }) => {
   // Find student's default class or first class available
-  const defaultClass = classes.find((c) => c.id === currentUser.kelasId) || classes[0];
+  const defaultClass = classes.find((c) => isClassMatch(c.id, currentUser.kelasId, classes)) || classes[0];
   const [selectedClassId, setSelectedClassId] = useState<string>(defaultClass?.id || '');
 
   const currentClassObj = classes.find((c) => c.id === selectedClassId) || defaultClass;
 
-  const classSchedules = schedules.filter((s) => s.kelasId === selectedClassId);
+  const classSchedules = schedules.filter((s) => isClassMatch(s.kelasId, selectedClassId, classes));
 
   const hariList: ScheduleItem['hari'][] = ['Sabtu', 'Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'];
 

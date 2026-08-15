@@ -203,13 +203,47 @@ export function matchSubject(rawMapel: string, subjects: SubjectItem[]): Subject
 }
 
 /**
+ * Normalize class name strings for robust comparison across all school formats:
+ * e.g., "XII IPA 1", "Kelas 12 IPA 1", "12 IPA 1", "X-A", "10-A", "XA", "Kelas X-A", "cls-10a", etc.
+ */
+export function normalizeClassName(raw: string | undefined | null): string {
+  if (!raw || typeof raw !== 'string') return '';
+  let s = raw.toLowerCase().trim();
+  // Strip common prefixes
+  s = s.replace(/^(kelas|kls|rombel|ruang|tingkat|cls-?)\s*[:.\-]?\s*/i, '');
+
+  // Standardize roman numerals
+  s = s
+    .replace(/\bxiii\b/g, '13')
+    .replace(/\bxii\b/g, '12')
+    .replace(/\bxi\b/g, '11')
+    .replace(/\bx\b/g, '10')
+    .replace(/\bix\b/g, '9')
+    .replace(/\bviii\b/g, '8')
+    .replace(/\bvii\b/g, '7')
+    .replace(/\bvi\b/g, '6');
+
+  // Handle direct prefixes without boundary like "xiia" or "x-a"
+  s = s
+    .replace(/^xii([a-z0-9])/i, '12$1')
+    .replace(/^xi([a-z0-9])/i, '11$1')
+    .replace(/^x([a-z0-9])/i, '10$1')
+    .replace(/^ix([a-z0-9])/i, '9$1')
+    .replace(/^viii([a-z0-9])/i, '8$1')
+    .replace(/^vii([a-z0-9])/i, '7$1');
+
+  return s.replace(/[^a-z0-9]/g, '');
+}
+
+/**
  * Match a class / kelas from Excel raw text or ID against a list of classes
  */
-export function matchClass(rawKelas: string, classes: ClassItem[]): ClassItem | null {
-  if (!rawKelas || !rawKelas.trim()) return null;
+export function matchClass(rawKelas: string | undefined | null, classes: ClassItem[]): ClassItem | null {
+  if (!rawKelas || !rawKelas.trim() || !Array.isArray(classes) || classes.length === 0) return null;
   const raw = rawKelas.trim();
   const rawLower = raw.toLowerCase();
   const rawClean = cleanStr(raw);
+  const rawNorm = normalizeClassName(raw);
 
   // 1. Exact ID or Name Match
   const exact = classes.find(
@@ -221,20 +255,10 @@ export function matchClass(rawKelas: string, classes: ClassItem[]): ClassItem | 
   const cleanMatch = classes.find((c) => cleanStr(c.namaKelas) === rawClean);
   if (cleanMatch) return cleanMatch;
 
-  // 3. Normalized Match (e.g., "X IPA 1" vs "Kelas 10 IPA 1" or "10-A" vs "X-A" or "cls-12a" vs "XII-A")
-  const normClassStr = (s: string) =>
-    (s || '')
-      .toLowerCase()
-      .replace(/^(kelas|kls|rombel|cls-?)\s*/i, '')
-      .replace(/\bxii\b/g, '12')
-      .replace(/\bxi\b/g, '11')
-      .replace(/\bx\b/g, '10')
-      .replace(/[^a-z0-9]/g, '');
-
-  const rawNorm = normClassStr(raw);
+  // 3. Normalized Match (e.g., "XII IPA 1" vs "Kelas 12 IPA 1", "X-A" vs "10-A", "cls-12a" vs "XII-A")
   if (rawNorm) {
     const normMatch = classes.find(
-      (c) => normClassStr(c.namaKelas) === rawNorm || normClassStr(c.id) === rawNorm
+      (c) => normalizeClassName(c.namaKelas) === rawNorm || normalizeClassName(c.id) === rawNorm
     );
     if (normMatch) return normMatch;
   }
@@ -248,10 +272,6 @@ const INVALID_CLASS_NAMES = new Set([
 ]);
 
 const LEGACY_CLASS_IDS = new Set(['cls-10ipa1', 'cls-11ipa1', 'cls-12ipa1', 'cls-12ips1']);
-const LEGACY_CLASS_NAMES = new Set([
-  'x ipa 1', 'xi ipa 1', 'xii ipa 1', 'xii ips 1', 'x ips 1',
-  'kelas x ipa 1', 'kelas xi ipa 1', 'kelas xii ipa 1', 'kelas xii ips 1', 'kelas x ips 1'
-]);
 
 /**
  * Sanitize and deduplicate class lists, ensuring valid class names and valid wali kelas from teachers list.
@@ -270,15 +290,6 @@ export function sanitizeAndDeduplicateClasses(
     }
   });
 
-  const normClassStr = (s: string) =>
-    s
-      .toLowerCase()
-      .replace(/^(kelas|kls|rombel)\s+/i, '')
-      .replace(/\bxii\b/g, '12')
-      .replace(/\bxi\b/g, '11')
-      .replace(/\bx\b/g, '10')
-      .replace(/[^a-z0-9]/g, '');
-
   const seenNorm = new Set<string>();
   const cleanedList: ClassItem[] = [];
 
@@ -288,10 +299,9 @@ export function sanitizeAndDeduplicateClasses(
     const lowerName = rawName.toLowerCase();
     const cleanName = cleanStr(rawName);
 
-    // Skip legacy, junk, or header names, or raw ID strings
+    // Skip junk or header names or raw ID strings
     if (
       LEGACY_CLASS_IDS.has(c.id) ||
-      LEGACY_CLASS_NAMES.has(lowerName) ||
       INVALID_CLASS_NAMES.has(lowerName) ||
       INVALID_CLASS_NAMES.has(cleanName) ||
       rawName.length < 1 ||
@@ -300,7 +310,7 @@ export function sanitizeAndDeduplicateClasses(
       continue;
     }
 
-    const normKey = normClassStr(rawName);
+    const normKey = normalizeClassName(rawName);
     if (!normKey || seenNorm.has(normKey)) {
       continue; // Skip duplicate normalized class
     }
@@ -347,8 +357,8 @@ export function sanitizeAndDeduplicateClasses(
  * Check if a student's or schedule's kelasId matches a target class filter or ID.
  */
 export function isClassMatch(
-  studentKelasId: string,
-  targetKelasId: string,
+  studentKelasId: string | undefined | null,
+  targetKelasId: string | undefined | null,
   classes: ClassItem[] = []
 ): boolean {
   if (!studentKelasId || !targetKelasId) return false;
@@ -360,26 +370,18 @@ export function isClassMatch(
   // 1. Direct equality
   if (sRaw.toLowerCase() === tRaw.toLowerCase()) return true;
 
-  // 2. Cleaned equality
-  if (cleanStr(sRaw) === cleanStr(tRaw)) return true;
+  // 2. Normalized string equality
+  const sNorm = normalizeClassName(sRaw);
+  const tNorm = normalizeClassName(tRaw);
+  if (sNorm && tNorm && sNorm === tNorm) return true;
 
-  // 3. Match against classes list
-  const studentClass = classes.find((c) => c.id === sRaw) || matchClass(sRaw, classes);
-  const targetClass = classes.find((c) => c.id === tRaw) || matchClass(tRaw, classes);
+  // 3. Match via classes registry
+  const sClass = matchClass(sRaw, classes);
+  const tClass = matchClass(tRaw, classes);
 
-  if (studentClass && targetClass) {
-    return studentClass.id === targetClass.id;
-  }
-
-  if (targetClass) {
-    if (sRaw.toLowerCase() === targetClass.id.toLowerCase()) return true;
-    if (cleanStr(sRaw) === cleanStr(targetClass.namaKelas)) return true;
-  }
-
-  if (studentClass) {
-    if (tRaw.toLowerCase() === studentClass.id.toLowerCase()) return true;
-    if (cleanStr(tRaw) === cleanStr(studentClass.namaKelas)) return true;
-  }
+  if (sClass && tClass && sClass.id === tClass.id) return true;
+  if (sClass && (sClass.id.toLowerCase() === tRaw.toLowerCase() || sClass.namaKelas.toLowerCase() === tRaw.toLowerCase())) return true;
+  if (tClass && (tClass.id.toLowerCase() === sRaw.toLowerCase() || tClass.namaKelas.toLowerCase() === sRaw.toLowerCase())) return true;
 
   return false;
 }
@@ -783,21 +785,37 @@ export function sanitizeAndDeduplicateSchedules(schedules: ScheduleItem[]): Sche
  */
 export function getDisplayClassName(kelasIdOrName: string | undefined | null, classes: ClassItem[] = []): string {
   if (!kelasIdOrName || !kelasIdOrName.trim()) {
-    return classes[0]?.namaKelas || 'Kelas';
+    return 'Kelas';
   }
   const raw = kelasIdOrName.trim();
+
+  // 1. Direct match by id or name in classes
+  const byExact = classes.find(
+    (c) => c.id.toLowerCase() === raw.toLowerCase() || c.namaKelas.trim().toLowerCase() === raw.toLowerCase()
+  );
+  if (byExact && byExact.namaKelas && !/^cls[-_]/i.test(byExact.namaKelas)) {
+    return byExact.namaKelas;
+  }
+
+  // 2. Normalized match in classes
   const matched = matchClass(raw, classes);
   if (matched && matched.namaKelas && !/^cls[-_]/i.test(matched.namaKelas)) {
     return matched.namaKelas;
   }
+
+  // 3. If raw itself is a human-readable name (not an internal ID like cls-imp-...), return raw
   if (!/^cls[-_]/i.test(raw)) {
     return raw;
   }
+
+  // 4. Check find by ID
   const byId = classes.find((c) => c.id === raw);
   if (byId && byId.namaKelas && !/^cls[-_]/i.test(byId.namaKelas)) {
     return byId.namaKelas;
   }
-  return classes[0]?.namaKelas || 'Kelas';
+
+  // Never return classes[0]?.namaKelas when an ID is not found (which was causing all classes to turn into "X-A")
+  return 'Kelas';
 }
 
 /**
