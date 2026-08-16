@@ -6,6 +6,7 @@ import { CameraCapture } from '../common/CameraCapture';
 import { UserCheck, CheckCircle2, Clock, LogOut, AlertCircle } from 'lucide-react';
 import { isTeacherMatch } from '../../lib/matchUtils';
 import { useToast } from '../../context/ToastContext';
+import { formatLongDate } from '../../lib/dateUtils';
 
 interface GuruPresensiProps {
   currentUser: User;
@@ -149,7 +150,7 @@ export const GuruPresensi: React.FC<GuruPresensiProps> = ({
           <div>
             <h3 className="text-lg font-bold text-white">Anda Sudah Melakukan Presensi Hari Ini</h3>
             <p className="text-xs text-slate-300 mt-1">
-              Tanggal: {myTodayAttendance.tanggal} | Jam Masuk: <span className="font-bold text-emerald-400">{myTodayAttendance.jamMasuk}</span>
+              Tanggal: {formatLongDate(myTodayAttendance.tanggal)} | Jam Masuk: <span className="font-bold text-emerald-400">{myTodayAttendance.jamMasuk}</span>
             </p>
             {myTodayAttendance.jamPulang && (
               <p className="text-xs text-slate-300 mt-0.5">

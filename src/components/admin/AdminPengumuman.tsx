@@ -3,6 +3,7 @@ import { Announcement } from '../../types';
 import { storageService } from '../../lib/storage';
 import { Bell, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { formatLongDate } from '../../lib/dateUtils';
 
 interface AdminPengumumanProps {
   announcements: Announcement[];
@@ -142,7 +143,7 @@ export const AdminPengumuman: React.FC<AdminPengumumanProps> = ({
                 >
                   {ann.kategori}
                 </span>
-                <span className="text-[11px] text-indigo-200/80 font-mono">{ann.tanggal}</span>
+                <span className="text-[11px] text-indigo-200/80 font-mono">{formatLongDate(ann.tanggal)}</span>
                 <span className="text-[11px] text-indigo-200/60">| Oleh: {ann.pembuat}</span>
               </div>
 

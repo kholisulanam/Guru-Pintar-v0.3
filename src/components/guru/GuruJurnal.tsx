@@ -8,6 +8,7 @@ import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 import { JamPelajaranDropdown, parseJamValueToNumbers } from '../common/JamPelajaranDropdown';
 import { useToast } from '../../context/ToastContext';
+import { formatLongDate } from '../../lib/dateUtils';
 
 interface GuruJurnalProps {
   currentUser: User;
@@ -193,7 +194,7 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
   const handleExportExcel = () => {
     const exportData = filteredJournals.map((j, idx) => ({
       No: idx + 1,
-      Tanggal: j.tanggal,
+      Tanggal: formatLongDate(j.tanggal),
       Jam: j.jamKe,
       'Materi Pembelajaran': j.materi,
       'Catatan KBM': j.catatanSiswa,
@@ -205,7 +206,7 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
     const headers = ['No', 'Tanggal', 'Jam Ke', 'Materi Pembelajaran', 'Catatan KBM / Siswa'];
     const rows = filteredJournals.map((j, idx) => [
       idx + 1,
-      j.tanggal,
+      formatLongDate(j.tanggal),
       j.jamKe,
       j.materi,
       j.catatanSiswa,
@@ -352,7 +353,7 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
             <tbody className="divide-y divide-slate-800">
               {filteredJournals.map((j) => (
                 <tr key={j.id} className="hover:bg-slate-800/50 transition">
-                  <td className="p-3 font-bold text-white">{j.tanggal}</td>
+                  <td className="p-3 font-bold text-white">{formatLongDate(j.tanggal)}</td>
                   <td className="p-3 font-mono text-emerald-400">{j.jamKe}</td>
                   <td className="p-3 font-medium text-slate-200">{j.materi}</td>
                   <td className="p-3 text-slate-400">{j.catatanSiswa}</td>
@@ -396,7 +397,7 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
           <tbody>
             {filteredJournals.map((j) => (
               <tr key={j.id}>
-                <td className="border border-slate-300 p-2 font-bold">{j.tanggal}</td>
+                <td className="border border-slate-300 p-2 font-bold">{formatLongDate(j.tanggal)}</td>
                 <td className="border border-slate-300 p-2 font-mono">{j.jamKe}</td>
                 <td className="border border-slate-300 p-2 font-medium">{j.materi}</td>
                 <td className="border border-slate-300 p-2 text-slate-600">{j.catatanSiswa}</td>

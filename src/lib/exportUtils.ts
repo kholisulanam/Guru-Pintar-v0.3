@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { SchoolSettings } from '../types';
+import { formatLongDate } from './dateUtils';
 
 /**
  * Export array of JSON data to Excel (.xlsx) file with Kop Sekolah Header
@@ -128,24 +129,13 @@ export function exportToPdfReport({
   const smstr = settings?.semester || 'Ganjil';
   
   const todayObj = new Date();
-  let defaultHari = todayObj.toLocaleDateString('id-ID', { weekday: 'long' });
-  let defaultTanggal = todayObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-
-  if (tanggal && !hari) {
-    const parsed = new Date(tanggal);
-    if (!isNaN(parsed.getTime())) {
-      defaultHari = parsed.toLocaleDateString('id-ID', { weekday: 'long' });
-    }
-  }
-
-  const finalHari = hari || defaultHari;
-  const finalTanggal = tanggal || defaultTanggal;
+  const finalTanggal = tanggal ? formatLongDate(tanggal) : formatLongDate(todayObj);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(15, 118, 110);
   doc.text(
-    `Semester: ${smstr}  |  Tahun Akademik: ${thAkademik}  |  Hari: ${finalHari}  |  Tanggal: ${finalTanggal}`,
+    `Semester: ${smstr}  |  Tahun Akademik: ${thAkademik}  |  Tanggal: ${finalTanggal}`,
     pageWidth / 2,
     48.5,
     { align: 'center' }
@@ -191,11 +181,7 @@ export function exportToPdfReport({
   }
 
   // --- SIGNATURE BLOCK (TTD) ---
-  const todayDateStr = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const todayDateStr = formatLongDate(new Date());
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);

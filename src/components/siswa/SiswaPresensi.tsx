@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User, StudentAttendance } from '../../types';
 import { Calendar, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+import { formatLongDate, formatMonthYear, getMonthYearOptions } from '../../lib/dateUtils';
 
 interface SiswaPresensiProps {
   currentUser: User;
@@ -13,16 +14,7 @@ export const SiswaPresensi: React.FC<SiswaPresensiProps> = ({
 }) => {
   const [selectedBulan, setSelectedBulan] = useState<string>('2026-08');
 
-  const monthNames = [
-    { value: '2026-01', label: 'Januari 2026' },
-    { value: '2026-02', label: 'Februari 2026' },
-    { value: '2026-03', label: 'Maret 2026' },
-    { value: '2026-04', label: 'April 2026' },
-    { value: '2026-05', label: 'Mei 2026' },
-    { value: '2026-06', label: 'Juni 2026' },
-    { value: '2026-07', label: 'Juli 2026' },
-    { value: '2026-08', label: 'Agustus 2026' },
-  ];
+  const monthNames = getMonthYearOptions(2026);
 
   const myMonthRecords = studentAttendances.filter(
     (sa) => sa.siswaId === currentUser.id && sa.tanggal.startsWith(selectedBulan)
@@ -86,7 +78,7 @@ export const SiswaPresensi: React.FC<SiswaPresensiProps> = ({
       <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-lg">
         <div className="p-4 border-b border-slate-800">
           <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-            Riwayat Presensi Bulan {selectedBulan} ({myMonthRecords.length} Catatan)
+            Riwayat Presensi Bulan {formatMonthYear(selectedBulan)} ({myMonthRecords.length} Catatan)
           </h3>
         </div>
 
@@ -111,7 +103,7 @@ export const SiswaPresensi: React.FC<SiswaPresensiProps> = ({
                 myMonthRecords.map((rec, idx) => (
                   <tr key={rec.id} className="hover:bg-slate-800/50 transition">
                     <td className="p-3 font-mono font-bold text-slate-400">{idx + 1}</td>
-                    <td className="p-3 font-bold text-white">{rec.tanggal}</td>
+                    <td className="p-3 font-bold text-white">{formatLongDate(rec.tanggal)}</td>
                     <td className="p-3">
                       <span
                         className={`px-3 py-1 rounded-full text-[10px] font-bold border ${

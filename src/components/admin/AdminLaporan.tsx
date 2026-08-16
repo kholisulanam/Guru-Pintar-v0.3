@@ -27,6 +27,7 @@ import { matchClass, isClassMatch } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 import { getTodayString } from '../../lib/storage';
+import { formatLongDate, formatMonthYear, getMonthYearOptions } from '../../lib/dateUtils';
 
 interface AdminLaporanProps {
   settings: SchoolSettings;
@@ -61,16 +62,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
   const [selectedGuru, setSelectedGuru] = useState<string>(teachers[0]?.id || 'usr-guru1');
   const [selectedMapel, setSelectedMapel] = useState<string>(subjects[0]?.id || 'sub-2');
 
-  const monthNames = [
-    { value: '2026-01', label: 'Januari 2026' },
-    { value: '2026-02', label: 'Februari 2026' },
-    { value: '2026-03', label: 'Maret 2026' },
-    { value: '2026-04', label: 'April 2026' },
-    { value: '2026-05', label: 'Mei 2026' },
-    { value: '2026-06', label: 'Juni 2026' },
-    { value: '2026-07', label: 'Juli 2026' },
-    { value: '2026-08', label: 'Agustus 2026' },
-  ];
+  const monthNames = getMonthYearOptions(2026);
 
   useEffect(() => {
     if (classes.length > 0 && !classes.some((c) => c.id === selectedKelas)) {
@@ -136,7 +128,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
       exportData = getPresensiSiswaData().map((s, idx) => ({
         No: idx + 1,
         'Nama Murid': s.siswaNama,
-        Tanggal: s.tanggal,
+        Tanggal: formatLongDate(s.tanggal),
         'Jam / Waktu': (s as any).jamKe || '07.00-07.40',
         Status: s.status,
         Catatan: s.catatan || '-',
@@ -146,7 +138,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
       exportData = getPresensiGuruData().map((g, idx) => ({
         No: idx + 1,
         'Nama Guru': g.guruNama,
-        Tanggal: g.tanggal,
+        Tanggal: formatLongDate(g.tanggal),
         'Jam Masuk': g.jamMasuk,
         'Jam Pulang': g.jamPulang || '-',
         Status: g.status,
@@ -156,7 +148,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
     } else if (reportType === 'jurnal') {
       exportData = getJurnalData().map((j, idx) => ({
         No: idx + 1,
-        Tanggal: j.tanggal,
+        Tanggal: formatLongDate(j.tanggal),
         Jam: j.jamKe,
         'Materi Pembelajaran': j.materi,
         'Catatan KBM': j.catatanSiswa,
@@ -185,7 +177,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
     let headers: string[] = [];
     let rows: (string | number)[][] = [];
 
-    const periodeText = modePeriode === 'harian' ? `Harian (Tanggal: ${selectedTanggal})` : `Bulanan (${selectedBulan})`;
+    const periodeText = modePeriode === 'harian' ? `Harian (Tanggal: ${formatLongDate(selectedTanggal)})` : `Bulanan (${formatMonthYear(selectedBulan)})`;
 
     if (reportType === 'presensi_siswa') {
       title = `REKAP PRESENSI MURID KELAS ${currentClassObj?.namaKelas?.toUpperCase()}`;
@@ -194,7 +186,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
       rows = getPresensiSiswaData().map((s, idx) => [
         idx + 1,
         s.siswaNama,
-        s.tanggal,
+        formatLongDate(s.tanggal),
         (s as any).jamKe || '07.00-07.40',
         s.status,
         s.catatan || '-',
@@ -205,7 +197,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
       headers = ['No', 'Tanggal', 'Jam Masuk', 'Jam Pulang', 'Status', 'Lokasi GPS'];
       rows = getPresensiGuruData().map((g, idx) => [
         idx + 1,
-        g.tanggal,
+        formatLongDate(g.tanggal),
         g.jamMasuk,
         g.jamPulang || '-',
         g.status,
@@ -217,7 +209,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
       headers = ['No', 'Tanggal', 'Jam Ke', 'Materi Pembelajaran', 'Catatan KBM'];
       rows = getJurnalData().map((j, idx) => [
         idx + 1,
-        j.tanggal,
+        formatLongDate(j.tanggal),
         j.jamKe,
         j.materi,
         j.catatanSiswa,
@@ -446,8 +438,8 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
           <p className="text-xs text-slate-600 font-medium mt-0.5">
             {reportType !== 'nilai'
               ? modePeriode === 'harian'
-                ? `Format: Cetak Harian | Tanggal: ${selectedTanggal}`
-                : `Format: Rekap Bulanan | Bulan: ${selectedBulan}`
+                ? `Cetak Harian | Tanggal: ${formatLongDate(selectedTanggal)}`
+                : `Rekap Bulanan | Bulan: ${formatMonthYear(selectedBulan)}`
               : `Kelas: ${currentClassObj?.namaKelas}`}
           </p>
         </div>
@@ -479,7 +471,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
                       <tr key={s.id} className="hover:bg-slate-50">
                         <td className="border border-slate-300 p-2.5 text-center font-mono">{idx + 1}</td>
                         <td className="border border-slate-300 p-2.5 font-bold">{s.siswaNama}</td>
-                        <td className="border border-slate-300 p-2.5">{s.tanggal}</td>
+                        <td className="border border-slate-300 p-2.5">{formatLongDate(s.tanggal)}</td>
                         <td className="border border-slate-300 p-2.5 font-mono">{(s as any).jamKe || '07.00-07.40'}</td>
                         <td className="border border-slate-300 p-2.5 font-semibold">{s.status}</td>
                         <td className="border border-slate-300 p-2.5">{s.catatan || '-'}</td>
@@ -513,7 +505,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
                     getPresensiGuruData().map((g, idx) => (
                       <tr key={g.id} className="hover:bg-slate-50">
                         <td className="border border-slate-300 p-2.5 text-center font-mono">{idx + 1}</td>
-                        <td className="border border-slate-300 p-2.5 font-bold">{g.tanggal}</td>
+                        <td className="border border-slate-300 p-2.5 font-bold">{formatLongDate(g.tanggal)}</td>
                         <td className="border border-slate-300 p-2.5 font-mono">{g.jamMasuk}</td>
                         <td className="border border-slate-300 p-2.5 font-mono">{g.jamPulang || '-'}</td>
                         <td className="border border-slate-300 p-2.5 font-semibold">{g.status}</td>
@@ -553,7 +545,7 @@ export const AdminLaporan: React.FC<AdminLaporanProps> = ({
                     getJurnalData().map((j, idx) => (
                       <tr key={j.id} className="hover:bg-slate-50">
                         <td className="border border-slate-300 p-2.5 text-center font-mono">{idx + 1}</td>
-                        <td className="border border-slate-300 p-2.5 font-bold">{j.tanggal}</td>
+                        <td className="border border-slate-300 p-2.5 font-bold">{formatLongDate(j.tanggal)}</td>
                         <td className="border border-slate-300 p-2.5 font-mono">{j.jamKe}</td>
                         <td className="border border-slate-300 p-2.5 font-medium">{j.materi}</td>
                         <td className="border border-slate-300 p-2.5 text-slate-600">{j.catatanSiswa}</td>

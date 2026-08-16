@@ -1,5 +1,6 @@
 import React from 'react';
 import { SchoolSettings } from '../../types';
+import { formatLongDate } from '../../lib/dateUtils';
 
 interface TandaTanganProps {
   settings: SchoolSettings;
@@ -14,11 +15,7 @@ export const TandaTangan: React.FC<TandaTanganProps> = ({
   jabatan = 'Guru Mata Pelajaran',
   locationName = 'Pragaan'
 }) => {
-  const todayStr = new Date().toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
+  const todayStr = formatLongDate(new Date());
 
   return (
     <div className="mt-10 pt-6 border-t border-slate-200 text-slate-800 text-xs sm:text-sm">

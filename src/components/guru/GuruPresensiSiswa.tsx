@@ -8,6 +8,7 @@ import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
 import { JamPelajaranDropdown, parseJamValueToNumbers } from '../common/JamPelajaranDropdown';
 import { useToast } from '../../context/ToastContext';
+import { formatLongDate } from '../../lib/dateUtils';
 
 interface GuruPresensiSiswaProps {
   currentUser: User;
@@ -163,7 +164,7 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
         'Nama Murid': s.nama,
         NISN: s.nisn,
         Kelas: currentClassObj?.namaKelas,
-        Tanggal: tanggalInput,
+        Tanggal: formatLongDate(tanggalInput),
         'Jam / Waktu': (rec as any)?.jamKe || selectedJamKe,
         Status: rec?.status || attendanceDraft[s.id] || 'Hadir',
       };
@@ -187,7 +188,7 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
 
     exportToPdfReport({
       title: `REKAP PRESENSI HARIAN MURID KELAS ${currentClassObj?.namaKelas?.toUpperCase()}`,
-      subtitle: `Tanggal: ${tanggalInput} | ${selectedJamKe}`,
+      subtitle: `Tanggal: ${formatLongDate(tanggalInput)} | ${selectedJamKe}`,
       headers,
       rows,
       settings,
@@ -326,7 +327,7 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
           <p className="text-xs text-slate-700 font-bold mt-1">
             Semester: {settings.semester} | Tahun Akademik: {settings.tahunAkademik}
           </p>
-          <p className="text-xs text-slate-600 font-medium mt-0.5">Tanggal: {tanggalInput} | {selectedJamKe}</p>
+          <p className="text-xs text-slate-600 font-medium mt-0.5">Tanggal: {formatLongDate(tanggalInput)} | {selectedJamKe}</p>
         </div>
 
         <table className="w-full text-left text-xs border-collapse border border-slate-300 my-4">
