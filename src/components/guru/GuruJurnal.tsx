@@ -6,6 +6,8 @@ import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
 import { isTeacherMatch, getTeacherSubjects, isClassMatch, matchClass } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
+import { JamPelajaranDropdown, parseJamValueToNumbers } from '../common/JamPelajaranDropdown';
+import { useToast } from '../../context/ToastContext';
 
 interface GuruJurnalProps {
   currentUser: User;
@@ -28,6 +30,7 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
   teachingJournals,
   setTeachingJournals,
 }) => {
+  const toast = useToast();
   const todayStr = getTodayString();
 
   // Get subjects taught by this teacher based on user profile, teacher data, and schedules
@@ -41,6 +44,82 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
   const [catatanSiswa, setCatatanSiswa] = useState('');
 
   const [filterKelas, setFilterKelas] = useState(classes[0]?.id || 'cls-12a');
+
+  // Helper to get Indonesian day name from date string
+  const getDayNameFromDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const daysMap = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      return daysMap[d.getDay()];
+    } catch {
+      return '';
+    }
+  };
+
+  const dayName = getDayNameFromDate(tanggal);
+
+  // Filter schedules belonging to this teacher
+  const teacherSchedules = schedules.filter((s) => isTeacherMatch(s.guruId, currentUser));
+
+  // Match schedules specifically for this teacher, date/day, class, and mapel
+  // Priority 1: Match Day + Class + Mapel
+  const schedulesDayClassMapel = teacherSchedules.filter((s) => {
+    const matchDay = !dayName || s.hari?.trim().toLowerCase() === dayName.toLowerCase();
+    const matchCls = isClassMatch(s.kelasId, kelasId, classes);
+    const matchMpl = s.mapelId === mapelId || (s.mapelId && mapelId && s.mapelId.toLowerCase().includes(mapelId.toLowerCase()));
+    return matchDay && matchCls && matchMpl;
+  });
+
+  // Priority 2: Match Day + Class
+  const schedulesDayClass = schedulesDayClassMapel.length > 0
+    ? schedulesDayClassMapel
+    : teacherSchedules.filter((s) => {
+        const matchDay = !dayName || s.hari?.trim().toLowerCase() === dayName.toLowerCase();
+        const matchCls = isClassMatch(s.kelasId, kelasId, classes);
+        return matchDay && matchCls;
+      });
+
+  // Priority 3: Match Class (any day for this class)
+  const schedulesClass = schedulesDayClass.length > 0
+    ? schedulesDayClass
+    : teacherSchedules.filter((s) => isClassMatch(s.kelasId, kelasId, classes));
+
+  // Active matching schedule items
+  const activeScheduleItems = schedulesDayClass.length > 0
+    ? schedulesDayClass
+    : (schedulesClass.length > 0 ? schedulesClass : teacherSchedules);
+
+  // Extract period numbers from the matched schedule (e.g. [1, 2])
+  const allowedPeriodNumbers: number[] = Array.from(
+    new Set(
+      activeScheduleItems.flatMap((s) => parseJamValueToNumbers(s.jamKe))
+    )
+  ).sort((a, b) => a - b);
+
+  // Extract direct schedule label options
+  const directScheduleOptions: string[] = Array.from(
+    new Set(activeScheduleItems.map((s) => s.jamKe.trim()).filter(Boolean))
+  );
+
+  const selectedClassObj = classes.find((c) => c.id === kelasId);
+  const scheduleInfo = schedulesDayClass.length > 0
+    ? `Sesuai Jadwal: ${dayName || 'Hari'} (${selectedClassObj?.namaKelas || 'Kelas'})`
+    : (teacherSchedules.length > 0 ? `Jadwal Guru (${selectedClassObj?.namaKelas || 'Kelas'})` : undefined);
+
+  // Auto-sync jamKe with current schedule when date, class, or mapel changes
+  useEffect(() => {
+    if (directScheduleOptions.length > 0) {
+      const currentNums = parseJamValueToNumbers(jamKe);
+      const isCurrentInSchedule = directScheduleOptions.includes(jamKe) ||
+        (allowedPeriodNumbers.length > 0 && currentNums.length > 0 && currentNums.every((n) => allowedPeriodNumbers.includes(n)));
+
+      if (!isCurrentInSchedule || jamKe === '08.30 - 10.00' || !jamKe) {
+        setJamKe(directScheduleOptions[0]);
+      }
+    }
+  }, [tanggal, kelasId, mapelId, schedules]);
 
   // Keep mapelId in sync with availableSubjects
   useEffect(() => {
@@ -67,32 +146,46 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
 
   const handleAddJournal = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!materi) return;
+    if (!materi) {
+      toast.warning('Silakan isi materi pembelajaran terlebih dahulu!', 'Materi Kosong');
+      return;
+    }
 
-    const added: TeachingJournal = {
-      id: `tj-${Date.now()}`,
-      guruId: currentUser.id,
-      guruNama: currentUser.name,
-      tanggal,
-      jamKe,
-      kelasId,
-      mapelId,
-      materi,
-      catatanSiswa: catatanSiswa || 'KBM berlangsung kondusif dan tertib.',
-    };
+    try {
+      const added: TeachingJournal = {
+        id: `tj-${Date.now()}`,
+        guruId: currentUser.id,
+        guruNama: currentUser.name,
+        tanggal,
+        jamKe,
+        kelasId,
+        mapelId,
+        materi,
+        catatanSiswa: catatanSiswa || 'KBM berlangsung kondusif dan tertib.',
+      };
 
-    const updatedList = [added, ...teachingJournals];
-    setTeachingJournals(updatedList);
-    storageService.saveTeachingJournals(updatedList, true);
-    setMateri('');
-    setCatatanSiswa('');
-    alert('Jurnal Mengajar harian berhasil disimpan dan tersimpan ke Database Firebase!');
+      const updatedList = [added, ...teachingJournals];
+      setTeachingJournals(updatedList);
+      storageService.saveTeachingJournals(updatedList, true);
+      setMateri('');
+      setCatatanSiswa('');
+      toast.success(
+        `Jurnal Mengajar KBM (${tanggal}, ${jamKe}) berhasil disimpan ke sistem & Cloud Firebase!`
+      );
+    } catch (err: any) {
+      toast.error('Gagal menyimpan Jurnal Mengajar. Silakan coba lagi.');
+    }
   };
 
   const handleDeleteJournal = (id: string) => {
-    const updatedList = teachingJournals.filter((j) => j.id !== id);
-    setTeachingJournals(updatedList);
-    storageService.saveTeachingJournals(updatedList, true);
+    try {
+      const updatedList = teachingJournals.filter((j) => j.id !== id);
+      setTeachingJournals(updatedList);
+      storageService.saveTeachingJournals(updatedList, true);
+      toast.info('Data Jurnal Mengajar berhasil dihapus.');
+    } catch (err) {
+      toast.error('Gagal menghapus data jurnal.');
+    }
   };
 
   const currentClassObj = classes.find((c) => c.id === filterKelas);
@@ -152,14 +245,14 @@ export const GuruJurnal: React.FC<GuruJurnalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-400 mb-1 font-bold">Jam Ke / Waktu</label>
-              <input
-                type="text"
-                required
-                placeholder="08.30 - 10.00"
+              <JamPelajaranDropdown
+                label="Jam Ke / Waktu"
                 value={jamKe}
-                onChange={(e) => setJamKe(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-100"
+                onChange={setJamKe}
+                placeholder="Pilih Jam Ke..."
+                allowedPeriodNumbers={allowedPeriodNumbers.length > 0 ? allowedPeriodNumbers : undefined}
+                directScheduleOptions={directScheduleOptions}
+                scheduleInfo={scheduleInfo}
               />
             </div>
 

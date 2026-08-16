@@ -35,6 +35,7 @@ import { exportToExcel } from '../../lib/exportUtils';
 import { storageService } from '../../lib/storage';
 import * as XLSX from 'xlsx';
 import { parseEntireWorkbook, extractExcelValue } from '../../lib/excelParser';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminPengelolaanProps {
   teachers: TeacherItem[];
@@ -98,9 +99,19 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
   const [editingBuku, setEditingBuku] = useState<LibraryBook | null>(null);
 
   // Toast state
+  const toast = useToast();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     setToastMessage(msg);
+    if (type === 'success' || msg.toLowerCase().includes('berhasil') || msg.toLowerCase().includes('tersimpan')) {
+      toast.success(msg);
+    } else if (type === 'error' || msg.toLowerCase().includes('gagal') || msg.toLowerCase().includes('tidak berhasil')) {
+      toast.error(msg);
+    } else if (type === 'warning' || msg.toLowerCase().includes('peringatan') || msg.toLowerCase().includes('perhatian')) {
+      toast.warning(msg);
+    } else {
+      toast.info(msg);
+    }
     setTimeout(() => setToastMessage(null), 3500);
   };
 

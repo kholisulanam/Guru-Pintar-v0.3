@@ -6,6 +6,7 @@ import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
 import { getTeacherSubjects, isClassMatch, matchClass } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
+import { useToast } from '../../context/ToastContext';
 
 interface GuruPenilaianProps {
   currentUser: User;
@@ -30,6 +31,7 @@ export const GuruPenilaian: React.FC<GuruPenilaianProps> = ({
   gradeRecords,
   setGradeRecords,
 }) => {
+  const toast = useToast();
   const availableSubjects = getTeacherSubjects(currentUser, subjects, teachers, schedules);
 
   const [selectedKelas, setSelectedKelas] = useState<string>(classes[0]?.id || 'cls-12a');
@@ -75,32 +77,44 @@ export const GuruPenilaian: React.FC<GuruPenilaianProps> = ({
   };
 
   const handleSaveGrades = () => {
-    const updatedRecords: GradeRecord[] = classStudents.map((s) => {
-      const draft = gradesDraft[s.id] || { a1: 85, a2: 85, a3: 85, asas: 90 };
-      const avg = (draft.a1 + draft.a2 + draft.a3 + draft.asas) / 4;
+    if (classStudents.length === 0) {
+      toast.warning('Tidak ada data murid di kelas ini.', 'Data Kosong');
+      return;
+    }
 
-      return {
-        id: `gr-${selectedKelas}-${selectedMapel}-${s.id}`,
-        siswaId: s.id,
-        siswaNama: s.nama,
-        kelasId: selectedKelas,
-        mapelId: selectedMapel,
-        asesmen1: draft.a1,
-        asesmen2: draft.a2,
-        asesmen3: draft.a3,
-        asas: draft.asas,
-        nilaiAkhir: Number(avg.toFixed(2)),
-      };
-    });
+    try {
+      const updatedRecords: GradeRecord[] = classStudents.map((s) => {
+        const draft = gradesDraft[s.id] || { a1: 85, a2: 85, a3: 85, asas: 90 };
+        const avg = (draft.a1 + draft.a2 + draft.a3 + draft.asas) / 4;
 
-    const filtered = gradeRecords.filter(
-      (g) => !(g.kelasId === selectedKelas && g.mapelId === selectedMapel)
-    );
+        return {
+          id: `gr-${selectedKelas}-${selectedMapel}-${s.id}`,
+          siswaId: s.id,
+          siswaNama: s.nama,
+          kelasId: selectedKelas,
+          mapelId: selectedMapel,
+          asesmen1: draft.a1,
+          asesmen2: draft.a2,
+          asesmen3: draft.a3,
+          asas: draft.asas,
+          nilaiAkhir: Number(avg.toFixed(2)),
+        };
+      });
 
-    const newRecords = [...filtered, ...updatedRecords];
-    setGradeRecords(newRecords);
-    storageService.saveGradeRecords(newRecords, true);
-    alert(`Nilai Asesmen 1-3 & ASAS berhasil disimpan untuk ${classStudents.length} murid!`);
+      const filtered = gradeRecords.filter(
+        (g) => !(g.kelasId === selectedKelas && g.mapelId === selectedMapel)
+      );
+
+      const newRecords = [...filtered, ...updatedRecords];
+      setGradeRecords(newRecords);
+      storageService.saveGradeRecords(newRecords, true);
+      toast.success(
+        `Nilai Asesmen 1-3 & ASAS berhasil disimpan untuk ${classStudents.length} murid (${currentClassObj?.namaKelas}, ${currentMapelObj?.namaMapel}) ke Cloud Firebase!`,
+        'Nilai Berhasil Disimpan'
+      );
+    } catch (err) {
+      toast.error('Gagal menyimpan nilai murid. Silakan coba beberapa saat lagi.');
+    }
   };
 
   const currentClassGrades = gradeRecords.filter(

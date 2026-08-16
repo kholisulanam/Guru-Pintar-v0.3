@@ -9,35 +9,83 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoCaptured })
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef<boolean>(true);
+  const activeStreamRef = useRef<MediaStream | null>(null);
 
   const [streamActive, setStreamActive] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
+  const stopCamera = () => {
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((track) => track.stop());
+      activeStreamRef.current = null;
+    }
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+      } catch (e) {
+        // ignore pause error
+      }
+      videoRef.current.srcObject = null;
+    }
+    if (isMountedRef.current) {
+      setStreamActive(false);
+    }
+  };
+
   const startCamera = async () => {
+    if (!isMountedRef.current) return;
     setCameraError(null);
+
+    // Stop any existing stream first
+    stopCamera();
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false,
       });
+
+      if (!isMountedRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      activeStreamRef.current = stream;
+
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        const video = videoRef.current;
+        video.srcObject = stream;
+
+        // Safely initiate play when metadata is loaded or directly with promise handling
+        const playVideo = () => {
+          if (!isMountedRef.current || !video.srcObject) return;
+          const playPromise = video.play();
+          if (playPromise !== undefined) {
+            playPromise.catch((err) => {
+              // AbortError or interrupted request is expected during fast component unmount/reset
+              if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+                console.warn('Video play interrupted or failed:', err);
+              }
+            });
+          }
+        };
+
+        if (video.readyState >= 2) {
+          playVideo();
+        } else {
+          video.onloadedmetadata = () => {
+            playVideo();
+          };
+        }
+
         setStreamActive(true);
       }
     } catch (err: any) {
+      if (!isMountedRef.current) return;
       console.warn('Camera access error:', err);
       setCameraError('Kamera tidak terdeteksi atau izin ditolak. Anda dapat mengunggah foto selfie presensi.');
-      setStreamActive(false);
-    }
-  };
-
-  const stopCamera = () => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
       setStreamActive(false);
     }
   };
@@ -74,8 +122,10 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onPhotoCaptured })
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     startCamera();
     return () => {
+      isMountedRef.current = false;
       stopCamera();
     };
   }, []);

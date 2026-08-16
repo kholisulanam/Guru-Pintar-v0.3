@@ -44,6 +44,7 @@ import {
   requestNotificationPermission,
   sendBrowserNotification
 } from '../../lib/reminderService';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminKalenderProps {
   events: CalendarEvent[];
@@ -103,6 +104,7 @@ export const AdminKalender: React.FC<AdminKalenderProps> = ({
   });
 
   // Delete confirmation & Toast
+  const toast = useToast();
   const [eventToDelete, setEventToDelete] = useState<CalendarEvent | null>(null);
   const [showDeleteSyncModal, setShowDeleteSyncModal] = useState<boolean>(false);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState<boolean>(false);
@@ -111,6 +113,13 @@ export const AdminKalender: React.FC<AdminKalenderProps> = ({
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
+    if (msg.toLowerCase().includes('berhasil') || msg.toLowerCase().includes('tersimpan') || msg.toLowerCase().includes('disiarkan')) {
+      toast.success(msg);
+    } else if (msg.toLowerCase().includes('gagal') || msg.toLowerCase().includes('tidak berhasil')) {
+      toast.error(msg);
+    } else {
+      toast.info(msg);
+    }
     setTimeout(() => setToastMessage(null), 4000);
   };
 

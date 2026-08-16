@@ -4,6 +4,7 @@ import { storageService } from '../../lib/storage';
 import { canUserAccessAssessment } from '../../lib/assessmentUtils';
 import { isClassMatch } from '../../lib/matchUtils';
 import { FileCheck, Plus, Trash2, Power, Clock, HelpCircle, Sparkles, Bot, Wand2, Loader2, Check, Pencil, Eye, Save, X, RotateCcw, Users, UserCheck, ShieldCheck, Copy, Files } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminAsesmenProps {
   currentUser?: User;
@@ -26,6 +27,7 @@ export const AdminAsesmen: React.FC<AdminAsesmenProps> = ({
   students = [],
   schedules = [],
 }) => {
+  const toast = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAssessmentId, setEditingAssessmentId] = useState<string | null>(null);
 
@@ -346,72 +348,99 @@ export const AdminAsesmen: React.FC<AdminAsesmenProps> = ({
     }
 
     if (soalList.length === 0) {
-      alert('Minimal harus ada 1 soal dalam asesmen!');
+      toast.warning('Minimal harus ada 1 soal dalam asesmen!', 'Soal Masih Kosong');
       return;
     }
 
     const finalTargetSiswaIds = targetSiswaOption === 'terpilih' ? selectedSiswaIds : [];
     const creatorId = currentUser?.id || currentUser?.username || guruId;
 
-    if (editingAssessmentId) {
-      // Update existing assessment
-      const updatedList = assessments.map((a) =>
-        a.id === editingAssessmentId
-          ? {
-              ...a,
-              judul,
-              kelasId,
-              mapelId,
-              guruId,
-              createdBy: a.createdBy || creatorId,
-              targetSiswaIds: finalTargetSiswaIds,
-              lamaUjianMenit,
-              jumlahSoal: soalList.length,
-              soalList,
-            }
-          : a
-      );
-      setAssessments(updatedList);
-      storageService.saveAssessments(updatedList, true);
-      alert('Perubahan Asesmen & Soal berhasil disimpan!');
-    } else {
-      // Create new assessment
-      const added: Assessment = {
-        id: `asm-${Date.now()}`,
-        judul,
-        kelasId,
-        mapelId,
-        guruId,
-        createdBy: creatorId,
-        targetSiswaIds: finalTargetSiswaIds,
-        jumlahSoal: soalList.length,
-        jenisSoal: 'Pilihan Ganda 5 Opsi',
-        waktuMulai: new Date().toISOString().slice(0, 16).replace('T', ' '),
-        lamaUjianMenit,
-        aktif: true,
-        soalList,
-      };
+    try {
+      if (editingAssessmentId) {
+        // Update existing assessment
+        const updatedList = assessments.map((a) =>
+          a.id === editingAssessmentId
+            ? {
+                ...a,
+                judul,
+                kelasId,
+                mapelId,
+                guruId,
+                createdBy: a.createdBy || creatorId,
+                targetSiswaIds: finalTargetSiswaIds,
+                lamaUjianMenit,
+                jumlahSoal: soalList.length,
+                soalList,
+              }
+            : a
+        );
+        setAssessments(updatedList);
+        storageService.saveAssessments(updatedList, true);
+        toast.success(
+          `Perubahan paket soal '${judul}' (${soalList.length} soal) berhasil disimpan ke Cloud Firebase!`,
+          'Asesmen Berhasil Diperbarui'
+        );
+      } else {
+        // Create new assessment
+        const added: Assessment = {
+          id: `asm-${Date.now()}`,
+          judul,
+          kelasId,
+          mapelId,
+          guruId,
+          createdBy: creatorId,
+          targetSiswaIds: finalTargetSiswaIds,
+          jumlahSoal: soalList.length,
+          jenisSoal: 'Pilihan Ganda 5 Opsi',
+          waktuMulai: new Date().toISOString().slice(0, 16).replace('T', ' '),
+          lamaUjianMenit,
+          aktif: true,
+          soalList,
+        };
 
-      const updatedList = [added, ...assessments];
-      setAssessments(updatedList);
-      storageService.saveAssessments(updatedList, true);
-      alert('Asesmen baru berhasil diterbitkan!');
+        const updatedList = [added, ...assessments];
+        setAssessments(updatedList);
+        storageService.saveAssessments(updatedList, true);
+        toast.success(
+          `Asesmen baru '${judul}' (${soalList.length} butir soal) berhasil diterbitkan & tersimpan!`,
+          'Asesmen Berhasil Diterbitkan'
+        );
+      }
+
+      setShowCreateModal(false);
+      setEditingAssessmentId(null);
+    } catch (err) {
+      toast.error('Gagal menyimpan asesmen CBT. Silakan coba lagi.');
     }
-
-    setShowCreateModal(false);
-    setEditingAssessmentId(null);
   };
 
   const handleToggleAktif = (id: string) => {
-    const updatedList = assessments.map((a) => (a.id === id ? { ...a, aktif: !a.aktif } : a));
-    setAssessments(updatedList);
-    storageService.saveAssessments(updatedList, true);
+    try {
+      const assessment = assessments.find((a) => a.id === id);
+      const newStatus = assessment ? !assessment.aktif : false;
+      const updatedList = assessments.map((a) => (a.id === id ? { ...a, aktif: !a.aktif } : a));
+      setAssessments(updatedList);
+      storageService.saveAssessments(updatedList, true);
+      toast.info(
+        newStatus
+          ? `Ujian '${assessment?.judul}' diaktifkan untuk murid.`
+          : `Ujian '${assessment?.judul}' dinonaktifkan.`
+      );
+    } catch (err) {
+      toast.error('Gagal mengubah status aktif ujian.');
+    }
   };
 
   const handleDeleteAssessment = (id: string) => {
-    const updatedList = assessments.filter((a) => a.id !== id);
-    setAssessments(updatedList);
-    storageService.saveAssessments(updatedList, true);
+    try {
+      const assessment = assessments.find((a) => a.id === id);
+      const updatedList = assessments.filter((a) => a.id !== id);
+      setAssessments(updatedList);
+      storageService.saveAssessments(updatedList, true);
+      toast.info(`Asesmen '${assessment?.judul || id}' berhasil dihapus.`);
+    } catch (err) {
+      toast.error('Gagal menghapus asesmen.');
+    }
   };
 
   return (

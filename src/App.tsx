@@ -44,6 +44,7 @@ import { Sidebar, TabItem } from './components/navigation/Sidebar';
 import { BottomNav } from './components/navigation/BottomNav';
 import { LandingPage } from './components/common/LandingPage';
 import { TeacherReminderListener } from './components/common/TeacherReminderListener';
+import { useToast } from './context/ToastContext';
 
 import {
   LayoutDashboard,
@@ -93,6 +94,7 @@ import { SiswaPengumuman } from './components/siswa/SiswaPengumuman';
 import { CbtExamModal } from './components/cbt/CbtExamModal';
 
 export default function App() {
+  const toast = useToast();
   // Global State initialized with local storage fallback
   const [users, setUsers] = useState<User[]>(() => {
     const loaded = storageService.get<User[]>('users', defaultUsers);
@@ -389,9 +391,16 @@ export default function App() {
 
   // Finish CBT Exam Submission
   const handleFinishExam = (submission: AssessmentSubmission) => {
-    setSubmissions((prev) => [...prev, submission]);
-    setActiveExam(null);
-    alert(`Ujian berhasil dikirim! Nilai Anda: ${submission.nilai.toFixed(1)}`);
+    try {
+      setSubmissions((prev) => [...prev, submission]);
+      setActiveExam(null);
+      toast.success(
+        `Jawaban ujian CBT Anda berhasil dikirim dan tersimpan! Nilai: ${submission.nilai.toFixed(1)}`,
+        'Ujian Selesai Dikirim'
+      );
+    } catch (err) {
+      toast.error('Gagal mengirimkan ujian. Silakan coba kembali.');
+    }
   };
 
   // If NOT logged in, show the Landing Page with role options
@@ -598,6 +607,7 @@ export default function App() {
                     settings={settings}
                     students={students}
                     classes={classes}
+                    schedules={schedules}
                     studentAttendances={studentAttendances}
                     setStudentAttendances={setStudentAttendances}
                   />

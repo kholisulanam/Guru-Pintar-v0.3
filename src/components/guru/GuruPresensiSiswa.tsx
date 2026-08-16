@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { StudentAttendance, StudentItem, ClassItem, SchoolSettings, User } from '../../types';
+import { StudentAttendance, StudentItem, ClassItem, SchoolSettings, User, ScheduleItem } from '../../types';
 import { storageService, getTodayString } from '../../lib/storage';
 import { Users, CheckCircle2, FileSpreadsheet, Printer, Save, CheckCheck } from 'lucide-react';
 import { exportToExcel, exportToPdfReport } from '../../lib/exportUtils';
-import { isClassMatch, matchClass } from '../../lib/matchUtils';
+import { isClassMatch, matchClass, isTeacherMatch } from '../../lib/matchUtils';
 import { KopSekolah } from '../common/KopSekolah';
 import { TandaTangan } from '../common/TandaTangan';
+import { JamPelajaranDropdown, parseJamValueToNumbers } from '../common/JamPelajaranDropdown';
+import { useToast } from '../../context/ToastContext';
 
 interface GuruPresensiSiswaProps {
   currentUser: User;
   settings: SchoolSettings;
   students: StudentItem[];
   classes: ClassItem[];
+  schedules?: ScheduleItem[];
   studentAttendances: StudentAttendance[];
   setStudentAttendances: React.Dispatch<React.SetStateAction<StudentAttendance[]>>;
 }
@@ -21,14 +24,74 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
   settings,
   students,
   classes,
+  schedules = [],
   studentAttendances,
   setStudentAttendances,
 }) => {
+  const toast = useToast();
   const todayStr = getTodayString();
 
   const [selectedKelas, setSelectedKelas] = useState<string>(classes[0]?.id || 'cls-12a');
   const [tanggalInput, setTanggalInput] = useState<string>(todayStr);
   const [selectedJamKe, setSelectedJamKe] = useState<string>('07.00-07.40');
+
+  // Helper to get Indonesian day name from date string
+  const getDayNameFromDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return '';
+      const daysMap = ['Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      return daysMap[d.getDay()];
+    } catch {
+      return '';
+    }
+  };
+
+  const dayName = getDayNameFromDate(tanggalInput);
+
+  // Filter schedules for this teacher
+  const teacherSchedules = schedules.filter((s) => isTeacherMatch(s.guruId, currentUser));
+
+  // Match schedules for chosen date/day and class
+  const schedulesDayClass = teacherSchedules.filter((s) => {
+    const matchDay = !dayName || s.hari?.trim().toLowerCase() === dayName.toLowerCase();
+    const matchCls = isClassMatch(s.kelasId, selectedKelas, classes);
+    return matchDay && matchCls;
+  });
+
+  const schedulesClass = schedulesDayClass.length > 0
+    ? schedulesDayClass
+    : teacherSchedules.filter((s) => isClassMatch(s.kelasId, selectedKelas, classes));
+
+  const activeScheduleItems = schedulesDayClass.length > 0
+    ? schedulesDayClass
+    : (schedulesClass.length > 0 ? schedulesClass : teacherSchedules);
+
+  const allowedPeriodNumbers: number[] = Array.from(
+    new Set(activeScheduleItems.flatMap((s) => parseJamValueToNumbers(s.jamKe)))
+  ).sort((a, b) => a - b);
+
+  const directScheduleOptions: string[] = Array.from(
+    new Set(activeScheduleItems.map((s) => s.jamKe.trim()).filter(Boolean))
+  );
+
+  const currentClassObj = classes.find((c) => c.id === selectedKelas) || matchClass(selectedKelas, classes) || classes[0];
+
+  const scheduleInfo = schedulesDayClass.length > 0
+    ? `Jadwal ${dayName || ''} (${currentClassObj?.namaKelas || 'Kelas'})`
+    : undefined;
+
+  // Auto sync selectedJamKe when date or class changes
+  useEffect(() => {
+    if (directScheduleOptions.length > 0) {
+      const currentNums = parseJamValueToNumbers(selectedJamKe);
+      const isValid = currentNums.length > 0 && currentNums.every((n) => allowedPeriodNumbers.includes(n));
+      if (!isValid || selectedJamKe === '07.00-07.40' || !selectedJamKe) {
+        setSelectedJamKe(directScheduleOptions[0]);
+      }
+    }
+  }, [tanggalInput, selectedKelas, schedules]);
 
   // Local state for batch student attendance entry
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, 'Hadir' | 'Izin' | 'Sakit' | 'Alpa'>>({});
@@ -41,7 +104,6 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
   }, [classes]);
 
   const classStudents = students.filter((s) => isClassMatch(s.kelasId, selectedKelas, classes));
-  const currentClassObj = classes.find((c) => c.id === selectedKelas) || matchClass(selectedKelas, classes) || classes[0];
 
   const handleSetAllHadir = () => {
     const draft: Record<string, 'Hadir' | 'Izin' | 'Sakit' | 'Alpa'> = {};
@@ -56,25 +118,37 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
   };
 
   const handleSavePresensi = () => {
-    const newRecords: StudentAttendance[] = classStudents.map((s) => ({
-      id: `sa-${Date.now()}-${s.id}`,
-      siswaId: s.id,
-      siswaNama: s.nama,
-      kelasId: selectedKelas,
-      tanggal: tanggalInput,
-      status: attendanceDraft[s.id] || 'Hadir',
-      jamKe: selectedJamKe,
-    }));
+    if (classStudents.length === 0) {
+      toast.warning('Tidak ada data murid di kelas ini.', 'Data Kosong');
+      return;
+    }
 
-    // Filter out previous records for same class and date
-    const filteredPrevious = studentAttendances.filter(
-      (sa) => !(sa.kelasId === selectedKelas && sa.tanggal === tanggalInput)
-    );
+    try {
+      const newRecords: StudentAttendance[] = classStudents.map((s) => ({
+        id: `sa-${Date.now()}-${s.id}`,
+        siswaId: s.id,
+        siswaNama: s.nama,
+        kelasId: selectedKelas,
+        tanggal: tanggalInput,
+        status: attendanceDraft[s.id] || 'Hadir',
+        jamKe: selectedJamKe,
+      }));
 
-    const updatedList = [...filteredPrevious, ...newRecords];
-    setStudentAttendances(updatedList);
-    storageService.saveStudentAttendances(updatedList, true);
-    alert(`Presensi ${classStudents.length} murid kelas ${currentClassObj?.namaKelas} (${selectedJamKe}) berhasil disimpan dan tersimpan ke Database Firebase!`);
+      // Filter out previous records for same class and date
+      const filteredPrevious = studentAttendances.filter(
+        (sa) => !(sa.kelasId === selectedKelas && sa.tanggal === tanggalInput)
+      );
+
+      const updatedList = [...filteredPrevious, ...newRecords];
+      setStudentAttendances(updatedList);
+      storageService.saveStudentAttendances(updatedList, true);
+      toast.success(
+        `Presensi ${classStudents.length} murid kelas ${currentClassObj?.namaKelas} (${selectedJamKe}) berhasil disimpan ke sistem & Cloud Firebase!`,
+        'Presensi Murid Disimpan'
+      );
+    } catch (err) {
+      toast.error('Gagal menyimpan presensi murid. Silakan coba kembali.');
+    }
   };
 
   const currentRecords = studentAttendances.filter(
@@ -154,22 +228,16 @@ export const GuruPresensiSiswa: React.FC<GuruPresensiSiswaProps> = ({
             />
           </div>
 
-          <div>
-            <label className="block text-slate-400 mb-1 font-bold">Pilih Jam</label>
-            <select
+          <div className="min-w-[180px]">
+            <JamPelajaranDropdown
+              label="Pilih Jam"
               value={selectedJamKe}
-              onChange={(e) => setSelectedJamKe(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-amber-300 font-bold"
-            >
-              <option value="07.00-07.40">07.00-07.40</option>
-              <option value="07.40-08.20">07.40-08.20</option>
-              <option value="08.20-09.00">08.20-09.00</option>
-              <option value="09.00-09.40">09.00-09.40</option>
-              <option value="10.00-10.40">10.00-10.40</option>
-              <option value="10.40-11.20">10.40-11.20</option>
-              <option value="12.20-13.00">12.20-13.00</option>
-              <option value="13.00-13.40">13.00-13.40</option>
-            </select>
+              onChange={setSelectedJamKe}
+              placeholder="Pilih Jam Pelajaran..."
+              allowedPeriodNumbers={allowedPeriodNumbers.length > 0 ? allowedPeriodNumbers : undefined}
+              directScheduleOptions={directScheduleOptions}
+              scheduleInfo={scheduleInfo}
+            />
           </div>
 
           <div className="pt-5">

@@ -4,6 +4,7 @@ import { Calendar, Plus, Trash2, Edit, Download, Upload, Filter, Clock, CheckCir
 import { exportToExcel } from '../../lib/exportUtils';
 import { storageService } from '../../lib/storage';
 import { parseEntireWorkbook, extractExcelValue } from '../../lib/excelParser';
+import { JamPelajaranDropdown, parseJamValueToNumbers } from '../common/JamPelajaranDropdown';
 import {
   matchTeacher,
   matchSubject,
@@ -19,6 +20,7 @@ import {
   sanitizeAndDeduplicateClasses,
 } from '../../lib/matchUtils';
 import * as XLSX from 'xlsx';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminJadwalProps {
   schedules: ScheduleItem[];
@@ -48,6 +50,7 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Toast & Delete & Edit States
+  const toast = useToast();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [deleteScheduleId, setDeleteScheduleId] = useState<string | null>(null);
   const [showDeleteAllModal, setShowDeleteAllModal] = useState<boolean>(false);
@@ -55,6 +58,13 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
+    if (msg.toLowerCase().includes('berhasil') || msg.toLowerCase().includes('tersimpan')) {
+      toast.success(msg);
+    } else if (msg.toLowerCase().includes('gagal') || msg.toLowerCase().includes('tidak berhasil')) {
+      toast.error(msg);
+    } else {
+      toast.info(msg);
+    }
     setTimeout(() => setToastMessage(null), 3500);
   };
 
@@ -65,16 +75,14 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
   const [newMapelId, setNewMapelId] = useState(subjects[0]?.id || '');
   const [newKelasId, setNewKelasId] = useState(classes[0]?.id || '');
 
-  const jamPelajaranList = [
-    '07.00-07.40',
-    '07.40-08.20',
-    '08.20-09.00',
-    '09.00-09.40',
-    '10.00-10.40',
-    '10.40-11.20',
-    '12.20-13.00',
-    '13.00-13.40',
-  ];
+  // Extract unique schedule period numbers and direct options from the schedule database
+  const allSchedulePeriodNumbers: number[] = Array.from(
+    new Set<number>(schedules.flatMap((s) => parseJamValueToNumbers(s.jamKe)))
+  ).sort((a, b) => a - b);
+
+  const directScheduleOptions: string[] = Array.from(
+    new Set<string>(schedules.map((s) => s.jamKe.trim()).filter(Boolean))
+  );
 
   const handleAddJadwal = (e: React.FormEvent) => {
     e.preventDefault();
@@ -363,20 +371,17 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             </select>
           </div>
 
-          {/* Jam Ke Dropdown */}
+          {/* Jam Ke Dropdown (Multi Checkbox) */}
           <div>
-            <label className="block font-semibold text-slate-400 mb-1">Jam Pelajaran</label>
-            <select
+            <JamPelajaranDropdown
+              label="Jam Pelajaran"
               value={newJamKe}
-              onChange={(e) => setNewJamKe(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-100 font-mono"
-            >
-              {jamPelajaranList.map((jam) => (
-                <option key={jam} value={jam}>
-                  {jam}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setNewJamKe(val)}
+              placeholder="Pilih Jam Pelajaran..."
+              allowedPeriodNumbers={allSchedulePeriodNumbers.length > 0 ? allSchedulePeriodNumbers : undefined}
+              directScheduleOptions={directScheduleOptions}
+              scheduleInfo={directScheduleOptions.length > 0 ? `Tersedia ${allSchedulePeriodNumbers.length} JP terdaftar di Jadwal Pelajaran` : undefined}
+            />
           </div>
 
           {/* Dropdown Guru */}
@@ -595,16 +600,15 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium text-slate-400 mb-1">Jam Pelajaran</label>
-                  <select
+                  <JamPelajaranDropdown
+                    label="Jam Pelajaran"
                     value={editingSchedule.jamKe}
-                    onChange={(e) => setEditingSchedule({ ...editingSchedule, jamKe: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-100 font-mono"
-                  >
-                    {jamPelajaranList.map((j) => (
-                      <option key={j} value={j}>{j}</option>
-                    ))}
-                  </select>
+                    onChange={(val) => setEditingSchedule({ ...editingSchedule, jamKe: val })}
+                    placeholder="Pilih Jam Pelajaran..."
+                    allowedPeriodNumbers={allSchedulePeriodNumbers.length > 0 ? allSchedulePeriodNumbers : undefined}
+                    directScheduleOptions={directScheduleOptions}
+                    scheduleInfo={directScheduleOptions.length > 0 ? `Tersedia ${allSchedulePeriodNumbers.length} JP terdaftar di Jadwal Pelajaran` : undefined}
+                  />
                 </div>
               </div>
               <div>

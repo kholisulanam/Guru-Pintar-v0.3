@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Announcement } from '../../types';
 import { storageService } from '../../lib/storage';
 import { Bell, Plus, Trash2 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminPengumumanProps {
   announcements: Announcement[];
@@ -12,34 +13,51 @@ export const AdminPengumuman: React.FC<AdminPengumumanProps> = ({
   announcements,
   setAnnouncements,
 }) => {
+  const toast = useToast();
   const [judul, setJudul] = useState('');
   const [isi, setIsi] = useState('');
   const [kategori, setKategori] = useState<'umum' | 'penting'>('umum');
 
   const handleAddAnnouncement = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!judul || !isi) return;
+    if (!judul || !isi) {
+      toast.warning('Judul dan isi pengumuman wajib diisi!', 'Form Belum Lengkap');
+      return;
+    }
 
-    const added: Announcement = {
-      id: `ann-${Date.now()}`,
-      judul,
-      isi,
-      kategori,
-      tanggal: new Date().toISOString().split('T')[0],
-      pembuat: 'Administrator Madrasah',
-    };
+    try {
+      const added: Announcement = {
+        id: `ann-${Date.now()}`,
+        judul,
+        isi,
+        kategori,
+        tanggal: new Date().toISOString().split('T')[0],
+        pembuat: 'Administrator Madrasah',
+      };
 
-    const updatedList = [added, ...announcements];
-    setAnnouncements(updatedList);
-    storageService.saveAnnouncements(updatedList, true);
-    setJudul('');
-    setIsi('');
+      const updatedList = [added, ...announcements];
+      setAnnouncements(updatedList);
+      storageService.saveAnnouncements(updatedList, true);
+      setJudul('');
+      setIsi('');
+      toast.success(
+        `Pengumuman '${judul}' berhasil diterbitkan dan tersimpan ke Cloud Firebase!`,
+        'Pengumuman Diterbitkan'
+      );
+    } catch (err) {
+      toast.error('Gagal menerbitkan pengumuman.');
+    }
   };
 
   const handleDeleteAnnouncement = (id: string) => {
-    const updatedList = announcements.filter((a) => a.id !== id);
-    setAnnouncements(updatedList);
-    storageService.saveAnnouncements(updatedList, true);
+    try {
+      const updatedList = announcements.filter((a) => a.id !== id);
+      setAnnouncements(updatedList);
+      storageService.saveAnnouncements(updatedList, true);
+      toast.info('Pengumuman berhasil dihapus.');
+    } catch (err) {
+      toast.error('Gagal menghapus pengumuman.');
+    }
   };
 
   return (

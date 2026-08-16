@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { ToastProvider } from './context/ToastContext.tsx';
 
 // Register PWA Service Worker
 if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
@@ -24,6 +25,8 @@ if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </StrictMode>,
 );

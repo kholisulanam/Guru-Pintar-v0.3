@@ -27,6 +27,7 @@ import {
   Check,
   Download
 } from 'lucide-react';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminPengaturanProps {
   settings: SchoolSettings;
@@ -43,6 +44,7 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
   setUsers,
   classes = [],
 }) => {
+  const toast = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'identitas' | 'users'>('users');
 
   // School Settings State
@@ -60,6 +62,7 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
+    toast.info(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
 
@@ -151,11 +154,18 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
 
   const handleSchoolSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setSettings(formData);
-    storageService.saveSettings(formData, true);
-    setSavedSuccess(true);
-    triggerToast('✓ Perubahan Identitas Madrasah berhasil tersimpan di database Firebase!');
-    setTimeout(() => setSavedSuccess(false), 5000);
+    try {
+      setSettings(formData);
+      storageService.saveSettings(formData, true);
+      setSavedSuccess(true);
+      toast.success(
+        'Perubahan Identitas Madrasah & Geolocation berhasil tersimpan ke sistem & Cloud Firebase!',
+        'Identitas Madrasah Disimpan'
+      );
+      setTimeout(() => setSavedSuccess(false), 5000);
+    } catch (err) {
+      toast.error('Gagal menyimpan identitas madrasah. Silakan coba kembali.');
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -232,67 +242,89 @@ export const AdminPengaturan: React.FC<AdminPengaturanProps> = ({
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!userFormData.name || !userFormData.username) {
-      alert('Nama dan Username wajib diisi!');
+      toast.warning('Nama dan Username wajib diisi!', 'Data Tidak Lengkap');
       return;
     }
 
-    let nextUsers: User[] = [];
-    if (editingUser) {
-      // Update existing
-      nextUsers = users.map((u) =>
-        u.id === editingUser.id
-          ? {
-              ...u,
-              name: userFormData.name,
-              nama: userFormData.name,
-              username: userFormData.username.trim().toLowerCase(),
-              password: userFormData.password,
-              role: userFormData.role,
-              nuptkOrNisn: userFormData.nuptkOrNisn,
-              kelasId: userFormData.kelasId,
-              status: userFormData.status,
-            }
-          : u
+    try {
+      let nextUsers: User[] = [];
+      if (editingUser) {
+        // Update existing
+        nextUsers = users.map((u) =>
+          u.id === editingUser.id
+            ? {
+                ...u,
+                name: userFormData.name,
+                nama: userFormData.name,
+                username: userFormData.username.trim().toLowerCase(),
+                password: userFormData.password,
+                role: userFormData.role,
+                nuptkOrNisn: userFormData.nuptkOrNisn,
+                kelasId: userFormData.kelasId,
+                status: userFormData.status,
+              }
+            : u
+        );
+      } else {
+        // Add new
+        const newUser: User = {
+          id: userFormData.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          name: userFormData.name,
+          nama: userFormData.name,
+          username: userFormData.username.trim().toLowerCase(),
+          password: userFormData.password,
+          role: userFormData.role,
+          nuptkOrNisn: userFormData.nuptkOrNisn,
+          kelasId: userFormData.kelasId,
+          status: userFormData.status,
+          avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80`,
+        };
+        nextUsers = [...users.filter((u) => u.username !== newUser.username), newUser];
+      }
+
+      setUsers(nextUsers);
+      storageService.saveUsers(nextUsers, true);
+
+      setIsModalOpen(false);
+      setSavedSuccess(true);
+      toast.success(
+        editingUser
+          ? `Data akun ${userFormData.name} berhasil diperbarui ke Cloud Firebase!`
+          : `Akun baru ${userFormData.name} (${userFormData.role.toUpperCase()}) berhasil dibuat & disimpan!`,
+        'Akun Pengguna Disimpan'
       );
-    } else {
-      // Add new
-      const newUser: User = {
-        id: userFormData.id || `usr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-        name: userFormData.name,
-        nama: userFormData.name,
-        username: userFormData.username.trim().toLowerCase(),
-        password: userFormData.password,
-        role: userFormData.role,
-        nuptkOrNisn: userFormData.nuptkOrNisn,
-        kelasId: userFormData.kelasId,
-        status: userFormData.status,
-        avatar: `https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80`,
-      };
-      nextUsers = [...users.filter((u) => u.username !== newUser.username), newUser];
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err) {
+      toast.error('Gagal menyimpan data pengguna.');
     }
-
-    setUsers(nextUsers);
-    storageService.saveUsers(nextUsers, true);
-
-    setIsModalOpen(false);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   // Quick Reset Password
   const handleResetPassword = (user: User) => {
-    const generated = user.role === 'siswa' ? generateRandomPass(8) : user.role === 'admin' ? 'admin#123' : generateRandomPass(8);
-    const nextUsers = users.map((u) => (u.id === user.id ? { ...u, password: generated } : u));
-    setUsers(nextUsers);
-    storageService.saveUsers(nextUsers, true);
-    triggerToast(`Password ${user.name} berhasil di-reset menjadi '${generated}'`);
+    try {
+      const generated = user.role === 'siswa' ? generateRandomPass(8) : user.role === 'admin' ? 'admin#123' : generateRandomPass(8);
+      const nextUsers = users.map((u) => (u.id === user.id ? { ...u, password: generated } : u));
+      setUsers(nextUsers);
+      storageService.saveUsers(nextUsers, true);
+      toast.success(
+        `Password untuk ${user.name} berhasil direset menjadi: ${generated}`,
+        'Password Direset'
+      );
+    } catch (err) {
+      toast.error('Gagal mereset password.');
+    }
   };
 
   // Delete User
   const handleDeleteUser = (userId: string, name: string) => {
-    const nextUsers = users.filter((u) => u.id !== userId);
-    setUsers(nextUsers);
-    storageService.saveUsers(nextUsers, true);
+    try {
+      const nextUsers = users.filter((u) => u.id !== userId);
+      setUsers(nextUsers);
+      storageService.saveUsers(nextUsers, true);
+      toast.info(`Akun pengguna ${name} berhasil dihapus dari sistem.`);
+    } catch (err) {
+      toast.error('Gagal menghapus pengguna.');
+    }
   };
 
   // Filter Users

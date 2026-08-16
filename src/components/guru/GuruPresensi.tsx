@@ -5,6 +5,7 @@ import { GeoLocationBadge } from '../common/GeoLocationBadge';
 import { CameraCapture } from '../common/CameraCapture';
 import { UserCheck, CheckCircle2, Clock, LogOut, AlertCircle } from 'lucide-react';
 import { isTeacherMatch } from '../../lib/matchUtils';
+import { useToast } from '../../context/ToastContext';
 
 interface GuruPresensiProps {
   currentUser: User;
@@ -19,6 +20,7 @@ export const GuruPresensi: React.FC<GuruPresensiProps> = ({
   teacherAttendances,
   setTeacherAttendances,
 }) => {
+  const toast = useToast();
   const todayStr = getTodayString();
 
   const [currentLat, setCurrentLat] = useState<number>(settings.latitude);
@@ -39,50 +41,64 @@ export const GuruPresensi: React.FC<GuruPresensiProps> = ({
 
   const handlePresensiMasuk = () => {
     if (!capturedPhoto) {
-      alert('Mohon ambil foto selfie verifikasi presensi terlebih dahulu.');
+      toast.warning('Mohon ambil foto selfie verifikasi presensi terlebih dahulu.', 'Foto Diperlukan');
       return;
     }
 
-    if (!isWithinRadius) {
-      alert('⚠️ PERINGATAN LOKASI GPS: Anda saat ini berada di LUAR RADIUS lokasi madrasah!\n\nPresensi Anda tetap disimpan dan dicatat di sistem dengan status lokasi di luar radius.');
+    try {
+      const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+
+      const newAttendance: TeacherAttendance = {
+        id: `ta-${Date.now()}`,
+        guruId: currentUser.id,
+        guruNama: currentUser.name,
+        tanggal: todayStr,
+        jamMasuk: timeStr,
+        status: 'Hadir',
+        lat: currentLat,
+        lng: currentLng,
+        dalamRadius: isWithinRadius,
+        fotoBase64: capturedPhoto,
+        catatan: catatan || (isWithinRadius ? 'Presensi Masuk Berhasil' : 'Presensi Luar Radius (Peringatan GPS)'),
+      };
+
+      const updatedList = [newAttendance, ...teacherAttendances];
+      setTeacherAttendances(updatedList);
+      storageService.saveTeacherAttendances(updatedList, true);
+
+      if (isWithinRadius) {
+        toast.success(
+          `Presensi Masuk (${timeStr}) berhasil dicatat & disinkronkan ke Cloud Firebase!`,
+          'Presensi Masuk Berhasil'
+        );
+      } else {
+        toast.warning(
+          `Presensi Masuk (${timeStr}) tersimpan dengan catatan di luar radius madrasah.`,
+          'Tersimpan (Luar Radius)'
+        );
+      }
+    } catch (err) {
+      toast.error('Gagal mencatat presensi guru. Silakan coba beberapa saat lagi.');
     }
-
-    const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-
-    const newAttendance: TeacherAttendance = {
-      id: `ta-${Date.now()}`,
-      guruId: currentUser.id,
-      guruNama: currentUser.name,
-      tanggal: todayStr,
-      jamMasuk: timeStr,
-      status: 'Hadir',
-      lat: currentLat,
-      lng: currentLng,
-      dalamRadius: isWithinRadius,
-      fotoBase64: capturedPhoto,
-      catatan: catatan || (isWithinRadius ? 'Presensi Masuk Berhasil' : 'Presensi Luar Radius (Peringatan GPS)'),
-    };
-
-    const updatedList = [newAttendance, ...teacherAttendances];
-    setTeacherAttendances(updatedList);
-    storageService.saveTeacherAttendances(updatedList, true);
-    alert(
-      isWithinRadius
-        ? 'Presensi Masuk Berhasil Dikerjakan dan Tersimpan di Database Firebase!'
-        : 'Presensi Masuk (Luar Radius Madrasah) Berhasil Disimpan di Database Firebase dengan Peringatan!'
-    );
   };
 
   const handlePresensiPulang = () => {
     if (!myTodayAttendance) return;
-    const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    try {
+      const timeStr = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-    const updatedList = teacherAttendances.map((ta) =>
-      ta.id === myTodayAttendance.id ? { ...ta, jamPulang: timeStr } : ta
-    );
-    setTeacherAttendances(updatedList);
-    storageService.saveTeacherAttendances(updatedList, true);
-    alert('Presensi Pulang Berhasil Dikerjakan dan Tersimpan di Database Firebase!');
+      const updatedList = teacherAttendances.map((ta) =>
+        ta.id === myTodayAttendance.id ? { ...ta, jamPulang: timeStr } : ta
+      );
+      setTeacherAttendances(updatedList);
+      storageService.saveTeacherAttendances(updatedList, true);
+      toast.success(
+        `Presensi Pulang (${timeStr}) berhasil disimpan ke sistem & Cloud Firebase!`,
+        'Presensi Pulang Berhasil'
+      );
+    } catch (err) {
+      toast.error('Gagal mencatat presensi pulang.');
+    }
   };
 
   return (
