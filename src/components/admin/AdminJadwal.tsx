@@ -3,6 +3,7 @@ import { ScheduleItem, TeacherItem, SubjectItem, ClassItem } from '../../types';
 import { Calendar, Plus, Trash2, Edit, Download, Upload, Filter, Clock, CheckCircle2, Check, X } from 'lucide-react';
 import { exportToExcel } from '../../lib/exportUtils';
 import { storageService } from '../../lib/storage';
+import { parseEntireWorkbook, extractExcelValue } from '../../lib/excelParser';
 import {
   matchTeacher,
   matchSubject,
@@ -18,89 +19,6 @@ import {
   sanitizeAndDeduplicateClasses,
 } from '../../lib/matchUtils';
 import * as XLSX from 'xlsx';
-
-function extractExcelValue(row: any, candidateKeys: string[]): string {
-  if (!row || typeof row !== 'object') return '';
-  const rowKeys = Object.keys(row);
-
-  // 1. Exact cleaned key match
-  for (const cand of candidateKeys) {
-    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const key of rowKeys) {
-      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (keyClean === candClean) {
-        const val = row[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          return String(val).trim();
-        }
-      }
-    }
-  }
-
-  // 2. Substring key match
-  for (const cand of candidateKeys) {
-    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!candClean) continue;
-    for (const key of rowKeys) {
-      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (keyClean.includes(candClean)) {
-        const val = row[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          return String(val).trim();
-        }
-      }
-    }
-  }
-
-  return '';
-}
-
-function readExcelRows(ws: XLSX.WorkSheet): any[] {
-  const matrix: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-  if (!matrix || matrix.length === 0) return [];
-
-  // Find header row index
-  let headerRowIndex = 0;
-  for (let r = 0; r < matrix.length; r++) {
-    const row = matrix[r];
-    if (!Array.isArray(row)) continue;
-    const rowStr = row.map((cell) => String(cell || '').toLowerCase()).join(' ');
-    if (
-      rowStr.includes('hari') ||
-      rowStr.includes('jam') ||
-      rowStr.includes('kelas') ||
-      rowStr.includes('rombel') ||
-      rowStr.includes('guru') ||
-      rowStr.includes('pengajar') ||
-      rowStr.includes('mapel')
-    ) {
-      headerRowIndex = r;
-      break;
-    }
-  }
-
-  const headers = (matrix[headerRowIndex] || []).map((h) => String(h || '').trim());
-  if (!headers || headers.length === 0) return [];
-
-  const result: any[] = [];
-  for (let r = headerRowIndex + 1; r < matrix.length; r++) {
-    const row = matrix[r];
-    if (!Array.isArray(row)) continue;
-    const hasContent = row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== '');
-    if (!hasContent) continue;
-
-    const rowObj: Record<string, string> = {};
-    headers.forEach((hKey, colIdx) => {
-      if (hKey) {
-        const val = row[colIdx];
-        rowObj[hKey] = val !== undefined && val !== null ? String(val).trim() : '';
-      }
-    });
-    result.push(rowObj);
-  }
-
-  return result;
-}
 
 interface AdminJadwalProps {
   schedules: ScheduleItem[];
@@ -233,9 +151,10 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data: any[] = readExcelRows(ws);
+        const sheets = parseEntireWorkbook(wb);
+
+        const data: any[] = [];
+        sheets.forEach((s) => data.push(...s.rows));
 
         if (!data || data.length === 0) {
           showToast('File Excel kosong atau format tidak sesuai.');
@@ -250,17 +169,32 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
         let subjectsAdded = false;
         let classesAdded = false;
 
-        const imported: ScheduleItem[] = data.map((item, idx) => {
-          const rawHari = extractExcelValue(item, ['Hari', 'Day', 'Nama Hari', 'NamaHari']) || 'Sabtu';
-          const validHari: ScheduleItem['hari'] = ['Sabtu', 'Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'].includes(rawHari)
-            ? (rawHari as any)
-            : 'Sabtu';
+        const imported: ScheduleItem[] = [];
 
-          const rawJam = extractExcelValue(item, ['JamKe', 'Jam Ke', 'Jam', 'Waktu', 'Pukul', 'Time', 'Jam_Ke']) || '07.00-07.40';
+        data.forEach((item, idx) => {
+          if (!item || typeof item !== 'object') return;
 
-          const rawKelas = extractExcelValue(item, ['Kelas', 'NamaKelas', 'Nama Kelas', 'Rombel', 'Rombongan Belajar', 'RombonganBelajar', 'Tingkat', 'Ruang', 'Class', 'Nama_Kelas']);
-          let matchedClass = matchClass(rawKelas, curClasses);
-          if (!matchedClass && rawKelas && rawKelas.length >= 1 && !rawKelas.startsWith('cls-')) {
+          const rawHariStr = (extractExcelValue(item, ['Hari', 'Day', 'Nama Hari', 'NamaHari', 'Hari KBM']) || 'Senin').trim();
+          const lowerHari = rawHariStr.toLowerCase();
+          let validHari: ScheduleItem['hari'] = 'Senin';
+          if (lowerHari.includes('sabtu')) validHari = 'Sabtu';
+          else if (lowerHari.includes('ahad') || lowerHari.includes('minggu')) validHari = 'Ahad';
+          else if (lowerHari.includes('senin')) validHari = 'Senin';
+          else if (lowerHari.includes('selasa')) validHari = 'Selasa';
+          else if (lowerHari.includes('rabu')) validHari = 'Rabu';
+          else if (lowerHari.includes('kamis')) validHari = 'Kamis';
+          else if (lowerHari.includes('jumat') || lowerHari.includes("jum'at")) validHari = 'Jumat';
+
+          const rawJam = (extractExcelValue(item, ['JamKe', 'Jam Ke', 'Jam', 'Waktu', 'Pukul', 'Time', 'Jam_Ke', 'Sesi']) || '07.00-07.40').trim();
+
+          const rawKelas = extractExcelValue(item, ['Kelas', 'NamaKelas', 'Nama Kelas', 'Rombel', 'Rombongan Belajar', 'RombonganBelajar', 'Tingkat', 'Ruang', 'Class', 'Nama_Kelas']).trim();
+          let matchedClass = curClasses.find(
+            (c) => c.namaKelas.trim().toLowerCase() === rawKelas.toLowerCase() || c.id.toLowerCase() === rawKelas.toLowerCase()
+          );
+          if (!matchedClass && rawKelas) {
+            matchedClass = matchClass(rawKelas, curClasses) || undefined;
+          }
+          if (!matchedClass && rawKelas) {
             const fallbackWali = curTeachers[curClasses.length % (curTeachers.length || 1)]?.nama || '-';
             matchedClass = {
               id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
@@ -272,9 +206,14 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             classesAdded = true;
           }
 
-          const rawGuru = extractExcelValue(item, ['Guru', 'NamaGuru', 'Nama Guru', 'Pengajar', 'Guru Pengajar', 'GuruPengajar', 'Teacher', 'Pendidik', 'Nama_Guru']);
-          let matchedGuru = matchTeacher(rawGuru, curTeachers);
-          if (!matchedGuru && rawGuru && rawGuru.length >= 2 && !rawGuru.startsWith('guru-') && !rawGuru.startsWith('usr-')) {
+          const rawGuru = extractExcelValue(item, ['Guru', 'NamaGuru', 'Nama Guru', 'Pengajar', 'Guru Pengajar', 'GuruPengajar', 'Teacher', 'Pendidik', 'Nama_Guru', 'Ustadz', 'Ustadzah']).trim();
+          let matchedGuru = curTeachers.find(
+            (t) => t.nama.trim().toLowerCase() === rawGuru.toLowerCase() || t.id.toLowerCase() === rawGuru.toLowerCase()
+          );
+          if (!matchedGuru && rawGuru) {
+            matchedGuru = matchTeacher(rawGuru, curTeachers) || undefined;
+          }
+          if (!matchedGuru && rawGuru) {
             const newTeacherId = `guru-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`;
             matchedGuru = {
               id: newTeacherId,
@@ -283,16 +222,24 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
               nuptk: '-',
               email: `${rawGuru.toLowerCase().replace(/[^a-z0-9]/g, '')}@al-amien.sch.id`,
               telepon: '081234567890',
-              mengajarMapel: extractExcelValue(item, ['Mapel', 'NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'MataPelajaran', 'Pelajaran', 'Subject']),
+              mengajarMapel: extractExcelValue(item, ['Mapel', 'NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'MataPelajaran', 'Pelajaran', 'Subject']).trim(),
               status: 'Aktif',
             };
             curTeachers.push(matchedGuru);
             teachersAdded = true;
           }
 
-          const rawMapel = extractExcelValue(item, ['Mapel', 'NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'MataPelajaran', 'Pelajaran', 'Subject', 'Nama_Mapel']);
-          let matchedMapel = matchSubject(rawMapel, curSubjects);
-          if (!matchedMapel && rawMapel && !rawMapel.startsWith('sub-')) {
+          const rawMapel = extractExcelValue(item, ['Mapel', 'NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'MataPelajaran', 'Pelajaran', 'Subject', 'Nama_Mapel']).trim();
+          let matchedMapel = curSubjects.find(
+            (s) =>
+              s.namaMapel.trim().toLowerCase() === rawMapel.toLowerCase() ||
+              s.kode.trim().toLowerCase() === rawMapel.toLowerCase() ||
+              s.id.toLowerCase() === rawMapel.toLowerCase()
+          );
+          if (!matchedMapel && rawMapel) {
+            matchedMapel = matchSubject(rawMapel, curSubjects) || undefined;
+          }
+          if (!matchedMapel && rawMapel) {
             matchedMapel = {
               id: `sub-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
               kode: `MP-${curSubjects.length + 1}`,
@@ -303,32 +250,31 @@ export const AdminJadwal: React.FC<AdminJadwalProps> = ({
             subjectsAdded = true;
           }
 
-          const finalClassId = matchedClass?.id || (curClasses.find(c => c.id.toLowerCase() === rawKelas.toLowerCase() || c.namaKelas.toLowerCase() === rawKelas.toLowerCase())?.id) || rawKelas || 'cls-1';
-          const finalGuruId = matchedGuru?.id || (curTeachers.find(t => t.id.toLowerCase() === rawGuru.toLowerCase() || t.nama.toLowerCase() === rawGuru.toLowerCase())?.id) || rawGuru || 'guru-1';
-          const finalMapelId = matchedMapel?.id || (curSubjects.find(s => s.id.toLowerCase() === rawMapel.toLowerCase() || s.namaMapel.toLowerCase() === rawMapel.toLowerCase())?.id) || rawMapel || 'sub-1';
+          const finalClassId = matchedClass?.id || rawKelas || '-';
+          const finalGuruId = matchedGuru?.id || rawGuru || '-';
+          const finalMapelId = matchedMapel?.id || rawMapel || '-';
 
-          return {
+          imported.push({
             id: `sch-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
             hari: validHari,
             jamKe: rawJam,
             kelasId: finalClassId,
             guruId: finalGuruId,
             mapelId: finalMapelId,
-          };
+          });
         });
 
         if (teachersAdded) {
-          if (setTeachers) setTeachers(curTeachers);
+          if (setTeachers) setTeachers([...curTeachers]);
           storageService.saveTeachers(curTeachers, true);
         }
         if (subjectsAdded) {
-          if (setSubjects) setSubjects(curSubjects);
+          if (setSubjects) setSubjects([...curSubjects]);
           storageService.saveSubjects(curSubjects, true);
         }
         if (classesAdded) {
-          const sanitizedClasses = sanitizeAndDeduplicateClasses(curClasses, curTeachers);
-          if (setClasses) setClasses(sanitizedClasses);
-          storageService.saveClasses(sanitizedClasses, true);
+          if (setClasses) setClasses([...curClasses]);
+          storageService.saveClasses(curClasses, true);
         }
 
         const sanitizedImported = sanitizeAndDeduplicateSchedules(imported);

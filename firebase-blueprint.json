@@ -3,14 +3,23 @@
     "app_data": {
       "title": "Application Data",
       "description": "Real-time state synchronization for e-Madrasah Terpadu",
+      "type": "object",
       "properties": {
         "payload": {
-          "type": "object"
+          "type": "object",
+          "description": "Payload data for application entity"
         },
         "updatedAt": {
-          "type": "string"
+          "type": "string",
+          "description": "Timestamp of last modification"
         }
       }
+    }
+  },
+  "firestore": {
+    "/app_data/{key}": {
+      "schema": "app_data",
+      "description": "Global synchronized data document for system modules"
     }
   }
 }

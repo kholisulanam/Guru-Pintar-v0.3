@@ -1,5 +1,13 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  onSnapshot,
+  Unsubscribe,
+} from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import {
   isLegacyDummyStudent,
@@ -10,7 +18,23 @@ import {
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId || undefined);
+function createFirestoreInstance() {
+  const dbId = firebaseConfig.firestoreDatabaseId || undefined;
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+        ignoreUndefinedProperties: true,
+      },
+      dbId
+    );
+  } catch {
+    return getFirestore(app, dbId);
+  }
+}
+
+export const db = createFirestoreInstance();
 
 let connectionStatusListeners: ((isConnected: boolean, statusText?: string) => void)[] = [];
 let isConnected = true;
@@ -176,6 +200,13 @@ export function syncToFirebase(key: string, data: any, immediate = true) {
           errCode.includes('permission-denied')
         ) {
           triggerQuotaExceededFallback();
+        } else if (
+          errCode.includes('unavailable') ||
+          errMsg.includes('unavailable') ||
+          errMsg.includes('could not reach') ||
+          errMsg.includes('failed to get document')
+        ) {
+          notifyConnectionStatus(false, 'Mode Offline (Menyimpan Lokal)');
         } else {
           console.error(`Firebase sync error for ${key}:`, err);
         }
@@ -363,8 +394,14 @@ export function subscribeToFirebaseKey<T>(key: string, onData: (data: T) => void
           errCode.includes('permission-denied')
         ) {
           triggerQuotaExceededFallback();
+        } else if (
+          errCode.includes('unavailable') ||
+          errMsg.includes('unavailable') ||
+          errMsg.includes('could not reach')
+        ) {
+          notifyConnectionStatus(false, 'Mode Offline (Menyimpan Lokal)');
         } else {
-          console.warn(`Firebase listener error for ${key}:`, error);
+          console.warn(`Firebase listener notice for ${key}:`, error);
         }
       }
     );

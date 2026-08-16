@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { matchClass, matchTeacher } from '../../lib/matchUtils';
+import { matchClass, matchTeacher, getDisplayClassName } from '../../lib/matchUtils';
 import {
   TeacherItem,
   StudentItem,
@@ -34,103 +34,7 @@ import {
 import { exportToExcel } from '../../lib/exportUtils';
 import { storageService } from '../../lib/storage';
 import * as XLSX from 'xlsx';
-
-function extractExcelValue(row: any, candidateKeys: string[]): string {
-  if (!row || typeof row !== 'object') return '';
-  const rowKeys = Object.keys(row);
-
-  // First pass: Exact key match
-  for (const cand of candidateKeys) {
-    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
-    for (const key of rowKeys) {
-      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (keyClean === candClean) {
-        const val = row[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          return String(val).trim();
-        }
-      }
-    }
-  }
-
-  // Second pass: Substring match
-  for (const cand of candidateKeys) {
-    const candClean = cand.toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!candClean) continue;
-    for (const key of rowKeys) {
-      const keyClean = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (keyClean.includes(candClean)) {
-        const val = row[key];
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          return String(val).trim();
-        }
-      }
-    }
-  }
-
-  return '';
-}
-
-function readExcelRows(ws: XLSX.WorkSheet): any[] {
-  // Read raw strings 2D matrix
-  const matrix: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
-  if (!matrix || matrix.length === 0) return [];
-
-  // Find header row index (scanning rows until we find header keywords)
-  let headerRowIndex = 0;
-  for (let r = 0; r < matrix.length; r++) {
-    const row = matrix[r];
-    if (!Array.isArray(row)) continue;
-
-    const rowStr = row.map((cell) => String(cell || '').toLowerCase()).join(' ');
-    if (
-      rowStr.includes('nama') ||
-      rowStr.includes('guru') ||
-      rowStr.includes('siswa') ||
-      rowStr.includes('santri') ||
-      rowStr.includes('murid') ||
-      rowStr.includes('peserta') ||
-      rowStr.includes('nuptk') ||
-      rowStr.includes('nip') ||
-      rowStr.includes('nisn') ||
-      rowStr.includes('nis') ||
-      rowStr.includes('kelas') ||
-      rowStr.includes('rombel') ||
-      rowStr.includes('mapel') ||
-      rowStr.includes('kode') ||
-      rowStr.includes('judul') ||
-      rowStr.includes('user') ||
-      rowStr.includes('username')
-    ) {
-      headerRowIndex = r;
-      break;
-    }
-  }
-
-  const headers = (matrix[headerRowIndex] || []).map((h) => String(h || '').trim());
-  if (!headers || headers.length === 0) return [];
-
-  const result: any[] = [];
-  for (let r = headerRowIndex + 1; r < matrix.length; r++) {
-    const row = matrix[r];
-    if (!Array.isArray(row)) continue;
-
-    const hasContent = row.some((cell) => cell !== undefined && cell !== null && String(cell).trim() !== '');
-    if (!hasContent) continue;
-
-    const rowObj: Record<string, string> = {};
-    headers.forEach((hKey, colIdx) => {
-      if (hKey) {
-        const val = row[colIdx];
-        rowObj[hKey] = val !== undefined && val !== null ? String(val).trim() : '';
-      }
-    });
-
-    result.push(rowObj);
-  }
-
-  return result;
-}
+import { parseEntireWorkbook, extractExcelValue } from '../../lib/excelParser';
 
 interface AdminPengelolaanProps {
   teachers: TeacherItem[];
@@ -744,11 +648,12 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data: any[] = readExcelRows(ws);
+        const sheets = parseEntireWorkbook(wb);
 
-        if (!data || data.length === 0) {
+        const allRows: any[] = [];
+        sheets.forEach((s) => allRows.push(...s.rows));
+
+        if (allRows.length === 0) {
           showToast('File Excel data Guru kosong atau tidak terbaca!');
           return;
         }
@@ -763,25 +668,54 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
           return !clean || ['123', '0', 'nuptk', 'nip', 'user', 'username', 'null', 'undefined', 'dash', '-'].includes(clean);
         };
 
-        data.forEach((item, idx) => {
+        allRows.forEach((item, idx) => {
           if (!item || typeof item !== 'object') return;
 
-          const teacherNama = extractExcelValue(item, [
+          let teacherNama = extractExcelValue(item, [
             'Nama Guru',
-            'Nama',
             'Nama Lengkap',
+            'Nama Pendidik',
+            'Nama Pengajar',
+            'Nama Ustadz',
+            'Nama Ustadzah',
+            'Nama',
             'Guru',
             'Pengajar',
             'Pendidik',
             'Name',
             'NamaGuru',
             'Pegawai'
-          ]);
+          ]).trim();
 
-          // Skip empty or invalid rows without a real name
-          if (!teacherNama || teacherNama.trim().length < 2) return;
+          // Fallback positional search in raw cells
+          if (!teacherNama && Array.isArray(item._rawCells)) {
+            for (const cell of item._rawCells) {
+              const cVal = String(cell || '').trim();
+              if (
+                cVal.length >= 2 &&
+                /[a-zA-Z]/.test(cVal) &&
+                !/^\d+$/.test(cVal) &&
+                !/^(no|nomor|nuptk|nip|nik|mapel|guru|pengajar|status|aktif|email)$/i.test(cVal)
+              ) {
+                teacherNama = cVal;
+                break;
+              }
+            }
+          }
+
+          if (!teacherNama || teacherNama.length < 2) return;
           const lowerNama = teacherNama.toLowerCase();
-          if (lowerNama.includes('yayasan') || lowerNama.includes('madrasah aliyah') || lowerNama.includes('tahun akademik')) return;
+          if (
+            lowerNama.includes('yayasan') ||
+            lowerNama.includes('madrasah aliyah') ||
+            lowerNama.includes('tahun akademik') ||
+            lowerNama.includes('daftar guru') ||
+            lowerNama.includes('rekap') ||
+            lowerNama === 'nama' ||
+            lowerNama === 'nama guru'
+          ) {
+            return;
+          }
 
           let teacherNuptkRaw = extractExcelValue(item, [
             'NUPTK',
@@ -791,9 +725,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             'ID Guru',
             'Username',
             'User'
-          ]);
-
-          teacherNuptkRaw = teacherNuptkRaw.replace(/\.0$/, '').trim();
+          ]).replace(/\.0$/, '').trim();
 
           const uniqueFallbackNuptk = `${Date.now().toString().slice(-6)}${idx}${Math.floor(Math.random() * 900 + 100)}`;
           const teacherNuptk = !isGenericValue(teacherNuptkRaw) ? teacherNuptkRaw : uniqueFallbackNuptk;
@@ -806,7 +738,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             'Pelajaran',
             'Subject',
             'Bidang'
-          ]) || 'Mapel Umum';
+          ]).trim() || 'Mapel Umum';
 
           const names = mapelStr
             .split(/[,;&/]/)
@@ -830,7 +762,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
               'Alamat Email',
               'Mail',
               'E Mail',
-            ]) || `${teacherNuptk}@al-amien.sch.id`;
+            ]).trim() || `${teacherNuptk}@al-amien.sch.id`;
 
           const phoneVal =
             extractExcelValue(item, [
@@ -849,11 +781,10 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
               'Phone',
               'No. HP',
               'No. Telp'
-            ]) || '081234567890';
+            ]).trim() || '081234567890';
 
-          let customUser = extractExcelValue(item, ['User', 'Username', 'Akun']).toLowerCase().trim();
-          customUser = customUser.replace(/\.0$/, '');
-          const customPass = extractExcelValue(item, ['Password', 'Pass', 'Sandi', 'PIN']) || 'guru123';
+          let customUser = extractExcelValue(item, ['User', 'Username', 'Akun']).toLowerCase().trim().replace(/\.0$/, '');
+          const customPass = extractExcelValue(item, ['Password', 'Pass', 'Sandi', 'PIN']).trim() || 'guru123';
 
           let baseUname = !isGenericValue(customUser)
             ? customUser
@@ -972,11 +903,12 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data: any[] = readExcelRows(ws);
+        const sheets = parseEntireWorkbook(wb);
 
-        if (!data || data.length === 0) {
+        const allRows: any[] = [];
+        sheets.forEach((s) => allRows.push(...s.rows));
+
+        if (allRows.length === 0) {
           showToast('File Excel data Siswa/Murid kosong atau tidak terbaca!');
           return;
         }
@@ -986,37 +918,63 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
           ...(users || []).map((u) => u.username.toLowerCase().trim()),
         ]);
 
-        const isGenericValue = (str: string) => {
-          const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return !clean || ['123', '0', 'nisn', 'nis', 'user', 'username', 'null', 'undefined', 'dash', '-', 'none', '1', '2', '3'].includes(clean);
-        };
-
         let currentClasses = [...classes];
         let classesUpdated = false;
-        const usedNisnsInBatch = new Set<string>();
 
-        data.forEach((item, idx) => {
+        allRows.forEach((item, idx) => {
           if (!item || typeof item !== 'object') return;
 
-          const studentNama = extractExcelValue(item, [
+          // 1. Extract Student Name (multi-candidate + positional fallback)
+          let studentNama = extractExcelValue(item, [
             'Nama Siswa',
             'Nama Lengkap',
             'Nama Peserta Didik',
             'Nama Santri',
             'Nama Murid',
+            'Nama Siswa / Santri',
+            'Nama Santri / Siswa',
+            'Nama Siswa/i',
+            'Nama Siswa (Sesuai Ijazah)',
+            'Nama Lengkap Siswa',
+            'Nama Peserta Didik (Lengkap)',
+            'Nama Lengkap Peserta Didik',
+            'Nama Lengkap Murid',
+            'Nama Calon Santri',
+            'Nama_Siswa',
+            'Nama_Lengkap',
+            'NamaSiswa',
+            'NamaLengkap',
+            'NamaPesertaDidik',
             'Nama',
             'Siswa',
             'Santri',
             'Murid',
             'Peserta Didik',
+            'PesertaDidik',
             'Name',
-            'NamaSiswa',
-            'NamaLengkap'
-          ]);
+            'Full Name',
+            'Student Name'
+          ]).trim();
 
-          if (!studentNama || studentNama.trim().length < 2) return;
+          // Positional fallback: check rawCells if column 1 or 2 contains a human name
+          if (!studentNama && Array.isArray(item._rawCells)) {
+            for (let ci = 0; ci < Math.min(item._rawCells.length, 6); ci++) {
+              const cVal = String(item._rawCells[ci] || '').trim();
+              if (
+                cVal.length >= 2 &&
+                /[a-zA-Z]/.test(cVal) &&
+                !/^\d+$/.test(cVal) &&
+                !/^(no|nomor|nisn|nis|nik|nim|jk|l\/p|lp|gender|sex|ttl|laki|perempuan|pria|wanita|l|p)$/i.test(cVal)
+              ) {
+                studentNama = cVal;
+                break;
+              }
+            }
+          }
 
-          const lowerNama = studentNama.toLowerCase().trim();
+          if (!studentNama || studentNama.length < 2) return;
+
+          const lowerNama = studentNama.toLowerCase();
           if (
             lowerNama.includes('yayasan') ||
             lowerNama.includes('madrasah') ||
@@ -1025,75 +983,149 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
             lowerNama.includes('rekap data') ||
             lowerNama.includes('tahun akademik') ||
             lowerNama.includes('tahun pelajaran') ||
+            lowerNama.includes('kementerian agama') ||
             lowerNama === 'nama' ||
             lowerNama === 'nama siswa' ||
             lowerNama === 'nama lengkap' ||
             lowerNama === 'jumlah' ||
             lowerNama === 'total'
-          ) return;
+          ) {
+            return;
+          }
 
+          // 2. Extract NISN
           let studentNisn = extractExcelValue(item, [
             'NISN',
             'NIS',
             'NISN/NIS',
             'NIS/NISN',
             'ID Siswa',
+            'No Induk Siswa',
+            'Nomor Induk Siswa',
             'No Induk',
             'Nomor Induk',
             'No. Induk',
             'No_Induk',
-            'No Induk Siswa',
             'NIM',
+            'NIK',
+            'ID_Siswa',
             'ID'
-          ]);
+          ]).replace(/\.0$/, '').trim();
 
-          studentNisn = studentNisn.replace(/\.0$/, '').trim();
-
-          if (!studentNisn || isGenericValue(studentNisn) || studentNisn.length < 4 || usedNisnsInBatch.has(studentNisn)) {
-            studentNisn = `006${Date.now().toString().slice(-5)}${String(idx).padStart(2, '0')}${Math.floor(Math.random() * 89 + 10)}`;
-          } else {
-            usedNisnsInBatch.add(studentNisn);
+          if (!studentNisn && Array.isArray(item._rawCells)) {
+            // Find numeric string with length >= 4
+            for (const cell of item._rawCells) {
+              const cClean = String(cell || '').trim().replace(/\.0$/, '');
+              if (/^\d{4,18}$/.test(cClean)) {
+                studentNisn = cClean;
+                break;
+              }
+            }
           }
 
-          const rawClassStr = extractExcelValue(item, [
+          if (!studentNisn) {
+            studentNisn = '-';
+          }
+
+          // 3. Extract Class
+          let rawClassStr = extractExcelValue(item, [
             'Kelas',
             'Nama Kelas',
             'Rombel',
             'Tingkat',
             'Kelas/Rombel',
+            'Rombongan Belajar',
+            'RombonganBelajar',
             'Nama_Kelas',
-            'Kelompok'
-          ]);
+            'Kelompok',
+            'Tingkat/Kelas',
+            'Class',
+            'Ruang',
+            'Ruangan'
+          ]).trim();
 
-          let matchedClass = matchClass(rawClassStr, currentClasses);
-          if (!matchedClass && rawClassStr && rawClassStr.trim().length >= 1) {
-            const cleanClassName = rawClassStr.trim();
-            const fallbackWali = teachers[currentClasses.length % (teachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.';
-            const newClassObj: ClassItem = {
-              id: `cls-auto-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-              namaKelas: cleanClassName,
-              waliKelas: fallbackWali,
-              jumlahSiswa: 0,
-            };
-            currentClasses.push(newClassObj);
-            classesUpdated = true;
-            matchedClass = newClassObj;
+          if (!rawClassStr && item._sheetName && !/^(sheet\d*|data|rekap|export|template)$/i.test(item._sheetName.trim())) {
+            rawClassStr = item._sheetName.trim();
           }
 
-          const classIdToUse = matchedClass ? matchedClass.id : (currentClasses[0]?.id || 'cls-12a');
+          let targetClass: ClassItem | undefined;
+          if (rawClassStr) {
+            targetClass = currentClasses.find(
+              (c) =>
+                c.namaKelas.trim().toLowerCase() === rawClassStr.toLowerCase() ||
+                c.id.toLowerCase() === rawClassStr.toLowerCase()
+            );
+            if (!targetClass) {
+              targetClass = matchClass(rawClassStr, currentClasses) || undefined;
+            }
+            if (!targetClass) {
+              const fallbackWali = teachers[currentClasses.length % (teachers.length || 1)]?.nama || '-';
+              targetClass = {
+                id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+                namaKelas: rawClassStr,
+                waliKelas: fallbackWali,
+                jumlahSiswa: 0,
+              };
+              currentClasses.push(targetClass);
+              classesUpdated = true;
+            }
+          }
 
-          const rawJk = extractExcelValue(item, ['Jenis Kelamin', 'JenisKelamin', 'JK', 'L/P', 'LP', 'Sex', 'Gender', 'L / P', 'Kelamin']).toUpperCase();
-          const parsedJk: 'L' | 'P' = rawJk.startsWith('P') || rawJk === 'PEREMPUAN' || rawJk === 'FEMALE' ? 'P' : 'L';
+          const classIdToUse = targetClass ? targetClass.id : (rawClassStr || '-');
 
-          const ttlStr = extractExcelValue(item, [
+          // 4. Extract Gender (Jenis Kelamin)
+          let rawJk = extractExcelValue(item, [
+            'Jenis Kelamin',
+            'JenisKelamin',
+            'JK',
+            'L/P',
+            'LP',
+            'L / P',
+            'Sex',
+            'Gender',
+            'Kelamin'
+          ]).toUpperCase().trim();
+
+          if (!rawJk && Array.isArray(item._rawCells)) {
+            for (const cell of item._rawCells) {
+              const cUpper = String(cell || '').toUpperCase().trim();
+              if (['L', 'P', 'LK', 'PR', 'LAKI-LAKI', 'PEREMPUAN', 'PRIA', 'WANITA', 'M', 'F'].includes(cUpper)) {
+                rawJk = cUpper;
+                break;
+              }
+            }
+          }
+
+          const parsedJk: 'L' | 'P' =
+            rawJk.startsWith('P') || rawJk === 'PEREMPUAN' || rawJk === 'WANITA' || rawJk === 'FEMALE' || rawJk === 'F' || rawJk === 'PR'
+              ? 'P'
+              : 'L';
+
+          // 5. Extract TTL (Tempat & Tanggal Lahir)
+          let ttlStr = extractExcelValue(item, [
             'TTL',
             'Tempat Tanggal Lahir',
-            'Tempat Lahir',
-            'Tanggal Lahir',
             'Tempat, Tanggal Lahir',
+            'Tempat / Tanggal Lahir',
+            'Tempat/Tanggal Lahir',
+            'Tempat & Tgl Lahir',
             'Tempat/Tgl Lahir',
-            'Tempat & Tgl Lahir'
-          ]) || 'Sumenep, 2006';
+            'Tempat Tgl Lahir',
+            'Tempat Lahir',
+            'Tanggal Lahir'
+          ]).trim();
+
+          if (!ttlStr) {
+            const tempat = extractExcelValue(item, ['Tempat Lahir', 'TempatLahir', 'Tempat']).trim();
+            const tgl = extractExcelValue(item, ['Tanggal Lahir', 'Tgl Lahir', 'TanggalLahir', 'TglLahir', 'Tgl']).trim();
+            if (tempat && tgl) ttlStr = `${tempat}, ${tgl}`;
+            else if (tempat) ttlStr = tempat;
+            else if (tgl) ttlStr = tgl;
+          }
+
+          if (!ttlStr) {
+            ttlStr = '-';
+          }
 
           const sObj: StudentItem = {
             id: `sis-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
@@ -1118,27 +1150,28 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
           storageService.saveClasses(currentClasses, true);
         }
 
-        let updatedStudents = [...students];
-        validImportedRows.forEach(({ student: s }) => {
-          const cleanNisn = s.nisn.trim();
-          const isRealNisn = cleanNisn.length >= 4 && !isGenericValue(cleanNisn);
+        // Cleanly merge student roster without losing non-conflicting records
+        let updatedStudents = [...(students || [])];
 
-          updatedStudents = updatedStudents.filter((existing) => {
-            if (existing.id === s.id) return false;
-            if (isRealNisn && existing.nisn.trim() === cleanNisn) return false;
+        validImportedRows.forEach(({ student: s }) => {
+          updatedStudents = updatedStudents.filter((ex) => {
+            if (ex.id === s.id) return false;
+            if (s.nisn && s.nisn !== '-' && s.nisn.length >= 4 && ex.nisn === s.nisn) return false;
             if (
-              existing.nama.toLowerCase().trim() === s.nama.toLowerCase().trim() &&
-              existing.kelasId === s.kelasId
-            ) return false;
+              ex.nama.toLowerCase().trim() === s.nama.toLowerCase().trim() &&
+              (ex.kelasId.toLowerCase().trim() === s.kelasId.toLowerCase().trim() ||
+                ex.kelasId === s.kelasId)
+            ) {
+              return false;
+            }
             return true;
           });
-
           updatedStudents.push(s);
         });
 
         const finalClasses = currentClasses.map((c) => ({
           ...c,
-          jumlahSiswa: updatedStudents.filter((st) => st.kelasId === c.id).length,
+          jumlahSiswa: updatedStudents.filter((st) => st.kelasId === c.id || st.kelasId === c.namaKelas).length,
         }));
         setClasses(finalClasses);
         storageService.saveClasses(finalClasses, true);
@@ -1153,7 +1186,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
           const customUser = extractExcelValue(row, ['User', 'Username', 'Akun', 'ID User']).toLowerCase().trim().replace(/\.0$/, '');
           const customPass = extractExcelValue(row, ['Password', 'Pass', 'Sandi', 'PIN', 'Sandi Akun', 'Kata Sandi']).trim();
 
-          let baseUname = customUser || s.nisn.toLowerCase();
+          let baseUname = customUser || (s.nisn !== '-' ? s.nisn.toLowerCase() : s.nama.toLowerCase().replace(/[^a-z0-9]/g, ''));
           let unameToUse = baseUname;
           let counter = 1;
           while (allUsernames.has(unameToUse)) {
@@ -1195,7 +1228,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
         }
         storageService.saveUsers(updatedUsersList, true);
 
-        showToast(`Berhasil mengimpor & menyimpan ${validImportedRows.length} data Siswa ke Database Cloud Firestore!`);
+        showToast(`Berhasil mengimpor & menyimpan ${validImportedRows.length} data Siswa dari ${sheets.length} Sheet ke Database!`);
       } catch (err) {
         console.error('Error importing students Excel:', err);
         showToast('Gagal membaca file Excel Siswa.');
@@ -1215,33 +1248,45 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data: any[] = readExcelRows(ws);
+        const sheets = parseEntireWorkbook(wb);
 
-        if (!data || data.length === 0) {
-          showToast('File Excel data Buku kosong!');
+        const allRows: any[] = [];
+        sheets.forEach((s) => allRows.push(...s.rows));
+
+        if (allRows.length === 0) {
+          showToast('File Excel data Buku kosong atau tidak terbaca!');
           return;
         }
 
-        const imported: LibraryBook[] = data.map((item, idx) => ({
-          id: `bk-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-          judul: extractExcelValue(item, ['Judul', 'Judul Buku', 'Nama Buku', 'Title']) || 'Judul Buku',
-          pengarang: extractExcelValue(item, ['Pengarang', 'Penulis', 'Author']) || 'Penulis',
-          penerbit: extractExcelValue(item, ['Penerbit', 'Publisher']) || 'Penerbit',
-          kategori: extractExcelValue(item, ['Kategori', 'Category']) || 'Keagamaan',
-          tahunTerbit: Number(extractExcelValue(item, ['Tahun', 'Tahun Terbit', 'Year'])) || 2024,
-          stok: Number(extractExcelValue(item, ['Stok', 'Jumlah', 'Stock'])) || 15,
-          coverColor: 'from-blue-600 to-indigo-800',
-          ringkasan: extractExcelValue(item, ['Ringkasan', 'Deskripsi', 'Summary']) || 'Deskripsi singkat modul bacaan.',
-          filePdfDemoUrl: extractExcelValue(item, ['LinkPDF', 'PDF', 'Link', 'URL']) || '',
-        }));
+        const imported: LibraryBook[] = allRows
+          .map((item, idx) => {
+            const judul = extractExcelValue(item, ['Judul', 'Judul Buku', 'Nama Buku', 'Title']).trim();
+            if (!judul || judul.length < 2) return null;
+            return {
+              id: `bk-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+              judul,
+              pengarang: extractExcelValue(item, ['Pengarang', 'Penulis', 'Author']).trim() || 'Penulis',
+              penerbit: extractExcelValue(item, ['Penerbit', 'Publisher']).trim() || 'Penerbit',
+              kategori: extractExcelValue(item, ['Kategori', 'Category']).trim() || 'Keagamaan',
+              tahunTerbit: Number(extractExcelValue(item, ['Tahun', 'Tahun Terbit', 'Year'])) || 2024,
+              stok: Number(extractExcelValue(item, ['Stok', 'Jumlah', 'Stock'])) || 15,
+              coverColor: 'from-blue-600 to-indigo-800',
+              ringkasan: extractExcelValue(item, ['Ringkasan', 'Deskripsi', 'Summary']).trim() || 'Deskripsi singkat modul bacaan.',
+              filePdfDemoUrl: extractExcelValue(item, ['LinkPDF', 'PDF', 'Link', 'URL']).trim() || '',
+            };
+          })
+          .filter(Boolean) as LibraryBook[];
+
+        if (imported.length === 0) {
+          showToast('Tidak ada data Buku valid dalam file.');
+          return;
+        }
 
         const updatedBooks = [...libraryBooks, ...imported];
         setLibraryBooks(updatedBooks);
         storageService.saveLibraryBooks(updatedBooks, true);
 
-        showToast(`Berhasil mengimpor & menyimpan ${imported.length} data Buku ke Database Cloud Firestore!`);
+        showToast(`Berhasil mengimpor & menyimpan ${imported.length} data Buku ke Database!`);
       } catch (err) {
         console.error('Error importing books Excel:', err);
         showToast('Gagal membaca file Excel Buku.');
@@ -1261,27 +1306,44 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data: any[] = readExcelRows(ws);
+        const sheets = parseEntireWorkbook(wb);
 
-        if (!data || data.length === 0) {
+        const allRows: any[] = [];
+        sheets.forEach((s) => allRows.push(...s.rows));
+
+        if (allRows.length === 0) {
           showToast('File Excel data Kelas kosong!');
           return;
         }
 
-        const imported: ClassItem[] = data.map((item, idx) => {
-          const rawWali = extractExcelValue(item, ['WaliKelas', 'Wali Kelas', 'Wali']);
-          const matchedWali = matchTeacher(rawWali, teachers);
-          return {
-            id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-            namaKelas: extractExcelValue(item, ['NamaKelas', 'Nama Kelas', 'Kelas', 'Nama']) || `Kelas ${idx + 1}`,
-            waliKelas: matchedWali ? matchedWali.nama : (teachers[idx % (teachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.'),
-            jumlahSiswa: Number(extractExcelValue(item, ['JumlahSiswa', 'Jumlah Siswa', 'Jumlah'])) || 0,
-          };
+        const imported: ClassItem[] = allRows
+          .map((item, idx) => {
+            const namaKelas = extractExcelValue(item, ['NamaKelas', 'Nama Kelas', 'Kelas', 'Nama']).trim();
+            if (!namaKelas || namaKelas.length < 1) return null;
+            const rawWali = extractExcelValue(item, ['WaliKelas', 'Wali Kelas', 'Wali']).trim();
+            const matchedWali = matchTeacher(rawWali, teachers);
+            return {
+              id: `cls-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+              namaKelas,
+              waliKelas: matchedWali ? matchedWali.nama : (teachers[idx % (teachers.length || 1)]?.nama || 'SYAIFUDIN KUDSI, SHI. MA.'),
+              jumlahSiswa: Number(extractExcelValue(item, ['JumlahSiswa', 'Jumlah Siswa', 'Jumlah'])) || 0,
+            };
+          })
+          .filter(Boolean) as ClassItem[];
+
+        if (imported.length === 0) {
+          showToast('Tidak ada data Kelas valid dalam file.');
+          return;
+        }
+
+        let updatedClasses = [...classes];
+        imported.forEach((c) => {
+          updatedClasses = updatedClasses.filter(
+            (ex) => ex.namaKelas.toLowerCase().trim() !== c.namaKelas.toLowerCase().trim()
+          );
+          updatedClasses.push(c);
         });
 
-        const updatedClasses = [...classes, ...imported];
         setClasses(updatedClasses);
         storageService.saveClasses(updatedClasses, true);
 
@@ -1305,23 +1367,44 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data: any[] = readExcelRows(ws);
+        const sheets = parseEntireWorkbook(wb);
 
-        if (!data || data.length === 0) {
+        const allRows: any[] = [];
+        sheets.forEach((s) => allRows.push(...s.rows));
+
+        if (allRows.length === 0) {
           showToast('File Excel data Mata Pelajaran kosong!');
           return;
         }
 
-        const imported: SubjectItem[] = data.map((item, idx) => ({
-          id: `mpl-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
-          kode: extractExcelValue(item, ['Kode', 'Kode Mapel', 'ID']) || `MPL${idx + 1}`,
-          namaMapel: extractExcelValue(item, ['NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'Nama']) || 'Mata Pelajaran',
-          kelompok: (extractExcelValue(item, ['Kelompok', 'Kategori']) || 'Wajib') as 'Wajib' | 'Peminatan' | 'Muatan Lokal',
-        }));
+        const imported: SubjectItem[] = allRows
+          .map((item, idx) => {
+            const namaMapel = extractExcelValue(item, ['NamaMapel', 'Nama Mapel', 'Mata Pelajaran', 'Nama']).trim();
+            if (!namaMapel || namaMapel.length < 2) return null;
+            return {
+              id: `mpl-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+              kode: extractExcelValue(item, ['Kode', 'Kode Mapel', 'ID']).trim() || `MPL${idx + 1}`,
+              namaMapel,
+              kelompok: (extractExcelValue(item, ['Kelompok', 'Kategori']).trim() || 'Wajib') as 'Wajib' | 'Peminatan' | 'Muatan Lokal',
+            };
+          })
+          .filter(Boolean) as SubjectItem[];
 
-        const updatedSubjects = [...subjects, ...imported];
+        if (imported.length === 0) {
+          showToast('Tidak ada data Mata Pelajaran valid dalam file.');
+          return;
+        }
+
+        let updatedSubjects = [...subjects];
+        imported.forEach((s) => {
+          updatedSubjects = updatedSubjects.filter(
+            (ex) =>
+              ex.namaMapel.toLowerCase().trim() !== s.namaMapel.toLowerCase().trim() &&
+              ex.kode.toLowerCase().trim() !== s.kode.toLowerCase().trim()
+          );
+          updatedSubjects.push(s);
+        });
+
         setSubjects(updatedSubjects);
         storageService.saveSubjects(updatedSubjects, true);
 
@@ -1843,7 +1926,7 @@ export const AdminPengelolaan: React.FC<AdminPengelolaanProps> = ({
                           <td className="p-4 font-bold text-white">{s.nama}</td>
                           <td className="p-4 font-mono text-cyan-400">{s.nisn}</td>
                           <td className="p-4 text-slate-300">{s.ttl}</td>
-                          <td className="p-4 font-bold text-emerald-400">{cls?.namaKelas || s.kelasId || 'XII IPA 1'}</td>
+                          <td className="p-4 font-bold text-emerald-400">{getDisplayClassName(s.kelasId, classes)}</td>
                           <td className="p-4 font-semibold">{s.jenisKelamin}</td>
                           <td className="p-4 text-center">
                             <div className="flex items-center justify-center gap-1">

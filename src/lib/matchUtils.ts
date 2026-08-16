@@ -785,7 +785,7 @@ export function sanitizeAndDeduplicateSchedules(schedules: ScheduleItem[]): Sche
  */
 export function getDisplayClassName(kelasIdOrName: string | undefined | null, classes: ClassItem[] = []): string {
   if (!kelasIdOrName || !kelasIdOrName.trim()) {
-    return 'Kelas';
+    return '-';
   }
   const raw = kelasIdOrName.trim();
 
@@ -814,52 +814,82 @@ export function getDisplayClassName(kelasIdOrName: string | undefined | null, cl
     return byId.namaKelas;
   }
 
-  // Never return classes[0]?.namaKelas when an ID is not found (which was causing all classes to turn into "X-A")
-  return 'Kelas';
+  return raw && !/^cls[-_]/i.test(raw) ? raw : '-';
 }
 
 /**
- * Safely get a human-readable display name for a teacher, avoiding raw ID codes like guru-imp-xxx or usr-xxx.
+ * Safely get a human-readable display name for a teacher, avoiding fallback to other teachers.
  */
 export function getDisplayTeacherName(guruIdOrName: string | undefined | null, teachers: TeacherItem[] = []): string {
   if (!guruIdOrName || !guruIdOrName.trim()) {
-    return teachers[0]?.nama || 'Guru Pengajar';
+    return '-';
   }
   const raw = guruIdOrName.trim();
+
+  // 1. Direct match by ID or Name
+  const byExact = teachers.find(
+    (t) => t.id.toLowerCase() === raw.toLowerCase() || t.nama.trim().toLowerCase() === raw.toLowerCase()
+  );
+  if (byExact && byExact.nama && !/^(guru|usr|tch|tchr)[-_]/i.test(byExact.nama)) {
+    return byExact.nama;
+  }
+
+  // 2. Match Teacher helper
   const matched = matchTeacher(raw, teachers);
   if (matched && matched.nama && !/^(guru|usr|tch|tchr)[-_]/i.test(matched.nama)) {
     return matched.nama;
   }
+
+  // 3. If raw itself is a readable teacher name, return raw
   if (!/^(guru|usr|tch|tchr)[-_]/i.test(raw)) {
     return raw;
   }
+
   const byId = teachers.find((t) => t.id === raw);
   if (byId && byId.nama && !/^(guru|usr|tch|tchr)[-_]/i.test(byId.nama)) {
     return byId.nama;
   }
-  return teachers[0]?.nama || 'Guru Pengajar';
+
+  return raw && !/^(guru|usr|tch|tchr)[-_]/i.test(raw) ? raw : '-';
 }
 
 /**
- * Safely get a human-readable display name for a subject, avoiding raw ID codes like sub-imp-xxx.
+ * Safely get a human-readable display name for a subject, avoiding fallback to other subjects.
  */
 export function getDisplaySubjectName(mapelIdOrName: string | undefined | null, subjects: SubjectItem[] = []): string {
   if (!mapelIdOrName || !mapelIdOrName.trim()) {
-    return subjects[0]?.namaMapel || 'Mata Pelajaran';
+    return '-';
   }
   const raw = mapelIdOrName.trim();
+
+  // 1. Direct match by ID, Code, or Name
+  const byExact = subjects.find(
+    (s) =>
+      s.id.toLowerCase() === raw.toLowerCase() ||
+      s.kode.toLowerCase() === raw.toLowerCase() ||
+      s.namaMapel.trim().toLowerCase() === raw.toLowerCase()
+  );
+  if (byExact && byExact.namaMapel && !/^(sub|mp|mapel)[-_]/i.test(byExact.namaMapel)) {
+    return byExact.namaMapel;
+  }
+
+  // 2. Match Subject helper
   const matched = matchSubject(raw, subjects);
   if (matched && matched.namaMapel && !/^(sub|mp|mapel)[-_]/i.test(matched.namaMapel)) {
     return matched.namaMapel;
   }
+
+  // 3. If raw itself is a readable subject name, return raw
   if (!/^(sub|mp|mapel)[-_]/i.test(raw)) {
     return raw;
   }
+
   const byId = subjects.find((s) => s.id === raw || s.kode === raw);
   if (byId && byId.namaMapel && !/^(sub|mp|mapel)[-_]/i.test(byId.namaMapel)) {
     return byId.namaMapel;
   }
-  return subjects[0]?.namaMapel || 'Mata Pelajaran';
+
+  return raw && !/^(sub|mp|mapel)[-_]/i.test(raw) ? raw : '-';
 }
 
 
